@@ -1,0 +1,1 @@
+dolphin自带了exe缩略图功能，但thunar和nautilus没有。安装icoextract即可：sudo pacman -S icoextract
