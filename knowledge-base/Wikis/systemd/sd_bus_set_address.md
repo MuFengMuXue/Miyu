@@ -1,0 +1,98 @@
+## Name
+
+sd_bus_set_address, sd_bus_get_address, sd_bus_set_exec — Set or query the address of the bus connection
+
+## Synopsis
+
+``` funcsynopsisinfo
+#include <systemd/sd-bus.h>
+```
+
+|                                   |                            |
+|-----------------------------------|----------------------------|
+| `int `**`sd_bus_set_address`**`(` | sd_bus \*`bus`,            |
+|                                   | const char \*`address``)`; |
+
+ 
+
+|                                   |                              |
+|-----------------------------------|------------------------------|
+| `int `**`sd_bus_get_address`**`(` | sd_bus \*`bus`,              |
+|                                   | const char \*\*`address``)`; |
+
+ 
+
+|                                |                           |
+|--------------------------------|---------------------------|
+| `int `**`sd_bus_set_exec`**`(` | sd_bus \*`bus`,           |
+|                                | const char \*`path`,      |
+|                                | char \*const \*`argv``)`; |
+
+ 
+
+## Description
+
+`sd_bus_set_address()` configures a list of addresses of bus brokers to try to connect to from a subsequent sd_bus_start(3) call. The argument is a "`;`"-separated list of addresses to try. Each item must be one of the following:
+
+- A unix socket address specified as "`unix:guid=`*`guid`*`,path=`*`path`*" or "`unix:guid=`*`guid`*`,abstract=`*`path`*". Exactly one of the `path=` and `abstract=` keys must be present, while `guid=` is optional.
+
+- A TCP socket address specified as "`tcp:[guid=`*`guid`*`,][host=`*`host`*`][,port=`*`port`*`][,family=`*`family`*`]`". One or both of the `host=` and `port=` keys must be present, while the rest is optional. *`family`* may be either `ipv4` or `ipv6`.
+
+- An executable to spawn specified as "`unixexec:guid=`*`guid`*`,path=`*`path`*`,argv1=`*`argument`*`,argv2=`*`argument`*`,...`". The `path=` key must be present, while `guid=` is optional.
+
+- A machine (container) to connect to specified as "`x-machine-unix:guid=`*`guid`*`,machine=`*`machine`*`,pid=`*`pid`*". Exactly one of the `machine=` and `pid=` keys must be present, while `guid=` is optional. *`machine`* is the name of a local container. See machinectl(1) for more information about the "machine" concept. "`machine=.host`" may be used to specify the host machine. A connection to the standard system bus socket inside of the specified machine will be created.
+
+In all cases, parameter *`guid`* is an identifier of the remote peer, in the syntax accepted by sd_id128_from_string(3). If specified, the identifier returned by the peer after the connection is established will be checked and the connection will be rejected in case of a mismatch.
+
+Note that the addresses passed to `sd_bus_set_address()` might not be verified immediately. If they are invalid, an error may be returned e.g. from a subsequent call to sd_bus_start(3).
+
+`sd_bus_get_address()` returns any previously set addresses. In addition to being explicitly set by `sd_bus_set_address()`, the address will also be set automatically by sd_bus_open(3) and similar calls, based on environment variables or built-in defaults.
+
+`sd_bus_set_exec()` is a shorthand function for setting a "`unixexec`" address that spawns the given executable with the given arguments. If *`argv`* is `NULL`, the given executable is spawned without any extra arguments.
+
+## Return Value
+
+On success, these functions return a non-negative integer. On failure, they return a negative errno-style error code.
+
+### Errors
+
+Returned errors may indicate the following problems:
+
+`-EINVAL`  
+The input parameters *`bus`* or *`address`* are `NULL`.
+
+Added in version 246.
+
+`-ENOPKG`  
+The bus object *`bus`* could not be resolved.
+
+Added in version 246.
+
+`-EPERM`  
+The input parameter *`bus`* is in a wrong state (`sd_bus_set_address()` may only be called once on a newly-created bus object).
+
+Added in version 246.
+
+`-ECHILD`  
+The bus object *`bus`* was created in a different process.
+
+Added in version 246.
+
+`-ENODATA`  
+The bus object *`bus`* has no address configured.
+
+Added in version 246.
+
+## Notes
+
+Functions described here are available as a shared library, which can be compiled against and linked to with the `libsystemd` pkg-config(1) file.
+
+The code described here uses getenv(3), which is declared to be not multi-thread-safe. This means that the code calling the functions described here must not call setenv(3) from a parallel thread. It is recommended to only do calls to `setenv()` from an early phase of the program when no other threads have been started.
+
+## History
+
+`sd_bus_set_address()`, `sd_bus_get_address()`, and `sd_bus_set_exec()` were added in version 246.
+
+## See Also
+
+systemd(1), sd-bus(3), sd_bus_new(3), sd_bus_start(3), systemd-machined.service(8), machinectl(1)

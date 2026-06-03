@@ -1,0 +1,74 @@
+## Name
+
+sd_bus_message_get_monotonic_usec, sd_bus_message_get_realtime_usec, sd_bus_message_get_seqnum — Retrieve the sender timestamps and sequence number of a message
+
+## Synopsis
+
+``` funcsynopsisinfo
+#include <systemd/sd-bus.h>
+```
+
+|  |  |
+|----|----|
+| `int `**`sd_bus_message_get_monotonic_usec`**`(` | sd_bus_message \*`message`, |
+|   | uint64_t \*`usec``)`; |
+
+ 
+
+|  |  |
+|----|----|
+| `int `**`sd_bus_message_get_realtime_usec`**`(` | sd_bus_message \*`message`, |
+|   | uint64_t \*`usec``)`; |
+
+ 
+
+|                                          |                             |
+|------------------------------------------|-----------------------------|
+| `int `**`sd_bus_message_get_seqnum`**`(` | sd_bus_message \*`message`, |
+|                                          | uint64_t \*`seqnum``)`;     |
+
+ 
+
+## Description
+
+`sd_bus_message_get_monotonic_usec()` returns the monotonic timestamp of the time the message was sent. This value is in microseconds since the `CLOCK_MONOTONIC` epoch, see clock_gettime(2) for details.
+
+Similarly, `sd_bus_message_get_realtime_usec()` returns the realtime (wallclock) timestamp of the time the message was sent. This value is in microseconds since Jan 1st, 1970, i.e. in the `CLOCK_REALTIME` clock.
+
+`sd_bus_message_get_seqnum()` returns the kernel-assigned sequence number of the message. The kernel assigns a global, monotonically increasing sequence number to all messages transmitted on the local system, at the time the message was sent. This sequence number is useful for determining message send order, even across different buses of the local system. The sequence number combined with the boot ID of the system (as returned by sd_id128_get_boot(3)) is a suitable globally unique identifier for bus messages.
+
+Note that the sending order and receiving order of messages might differ, in particular for broadcast messages. This means that the sequence number and the timestamps of messages a client reads are not necessarily monotonically increasing.
+
+These timestamps and the sequence number are attached to each message by the kernel and cannot be manipulated by the sender.
+
+Note that these timestamps are only available on some bus transports, and only after support for them has been negotiated with the sd_bus_negotiate_timestamp(3) call.
+
+## Return Value
+
+On success, these calls return 0 or a positive integer. On failure, these calls return a negative errno-style error code.
+
+On success, the timestamp or sequence number is returned in the specified 64-bit unsigned integer variable.
+
+### Errors
+
+Returned errors may indicate the following problems:
+
+`-EINVAL`  
+A specified parameter is invalid.
+
+`-ENODATA`  
+No timestamp or sequence number information is attached to the passed message. This error is returned if the underlying transport does not support timestamping or assigning of sequence numbers, or if this feature has not been negotiated with sd_bus_negotiate_timestamp(3).
+
+## Notes
+
+Functions described here are available as a shared library, which can be compiled against and linked to with the `libsystemd` pkg-config(1) file.
+
+The code described here uses getenv(3), which is declared to be not multi-thread-safe. This means that the code calling the functions described here must not call setenv(3) from a parallel thread. It is recommended to only do calls to `setenv()` from an early phase of the program when no other threads have been started.
+
+## History
+
+`sd_bus_message_get_monotonic_usec()`, `sd_bus_message_get_realtime_usec()`, and `sd_bus_message_get_seqnum()` were added in version 209.
+
+## See Also
+
+systemd(1), sd-bus(3), sd_bus_new(3), sd_bus_negotiate_timestamp(3), clock_gettime(2), sd_id128_get_boot(3)

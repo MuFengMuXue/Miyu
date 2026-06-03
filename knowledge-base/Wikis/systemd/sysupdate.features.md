@@ -1,0 +1,229 @@
+## Name
+
+sysupdate.features — Definition Files for Optional Features
+
+## Synopsis
+
+|                                        |
+|----------------------------------------|
+| `/etc/sysupdate.d/*.feature`           |
+| `/run/sysupdate.d/*.feature`           |
+| `/usr/local/lib/sysupdate.d/*.feature` |
+| `/usr/lib/sysupdate.d/*.feature`       |
+
+## Description
+
+"Optional Features" are functionality provided by systemd-sysupdate(8), that allow a distribution to define sets of sysupdate.d(5) transfer definitions that are intended to be enabled or disabled by the system administrator.
+
+When a feature is enabled, transfers belonging to it will be considered when checking for and downloading updates, when vacuuming, and in all other situations. In effect, transfers belonging to a feature will always be updated in lock-step with the rest of their target. This is the primary difference an Optional Feature and a systemd-sysupdate(8) component. When a feature is disabled, its transfers will not be considered when checking for and downloading updates, but **systemd-sysupdate** will still consider them while vacuuming and in other situations where it needs to determine ownership over previously downloaded system resources. **systemd-sysupdate** will clean up all instances of the feature's transfers whenever it is disabled, effectively uninstalling it.
+
+Optional Features are described by `sysupdate.d/*.feature` files, which are defined below. Transfers can declare that they belong to a feature via the `Features=` setting. Feature definitions support drop-in files, which are most commonly used to override the `Enabled=` setting. They can also be masked to hide the availability of the feature entirely.
+
+Each `*.feature` file contains one section: \[Feature\].
+
+## \[Feature\] Section Options
+
+This section defines general properties of this feature.
+
+`Description=`  
+A short human-readable description of this feature. This may be used as a label for this feature, so the string should meaningfully identify the feature among the features available in `sysupdate.d/`.
+
+Added in version 257.
+
+`Documentation=`  
+A user-presentable URL to documentation about this feature. This setting supports specifier expansion; see below for details on supported specifiers.
+
+Added in version 257.
+
+`AppStream=`  
+A URL to an AppStream catalog XML file. This may be used by software centers (such as GNOME Software or KDE Discover) to present rich metadata about this feature. This includes display names, changelogs, icons, and more. This setting supports specifier expansion; see below for details on supported specifiers.
+
+Added in version 257.
+
+`Enabled=`  
+Whether or not this feature is enabled. If unspecified, the feature is disabled by default.
+
+Added in version 257.
+
+## Specifiers
+
+Specifiers may be used in the `Documentation=` and `AppStream=` settings. The following expansions are understood:
+
+**Table 1. Specifiers available**
+
+| Specifier | Meaning | Details |
+|:---|:---|:---|
+| "`%a`" | Architecture | A short string identifying the architecture of the local system. A string such as `x86`, `x86-64` or `arm64`. See the architectures defined for `ConditionArchitecture=` in systemd.unit(5) for a full list. |
+| "`%A`" | Operating system image version | The operating system image version identifier of the running system, as read from the `IMAGE_VERSION=` field of `/etc/os-release`. If not set, resolves to an empty string. See os-release(5) for more information. |
+| "`%b`" | Boot ID | The boot ID of the running system, formatted as string. See random(4) for more information. |
+| "`%B`" | Operating system build ID | The operating system build identifier of the running system, as read from the `BUILD_ID=` field of `/etc/os-release`. If not set, resolves to an empty string. See os-release(5) for more information. |
+| "`%H`" | Host name | The hostname of the running system. |
+| "`%l`" | Short host name | The hostname of the running system, truncated at the first dot to remove any domain component. |
+| "`%m`" | Machine ID | The machine ID of the running system, formatted as string. See machine-id(5) for more information. |
+| "`%M`" | Operating system image identifier | The operating system image identifier of the running system, as read from the `IMAGE_ID=` field of `/etc/os-release`. If not set, resolves to an empty string. See os-release(5) for more information. |
+| "`%o`" | Operating system ID | The operating system identifier of the running system, as read from the `ID=` field of `/etc/os-release`. See os-release(5) for more information. |
+| "`%v`" | Kernel release | Identical to **uname -r** output. |
+| "`%w`" | Operating system version ID | The operating system version identifier of the running system, as read from the `VERSION_ID=` field of `/etc/os-release`. If not set, resolves to an empty string. See os-release(5) for more information. |
+| "`%W`" | Operating system variant ID | The operating system variant identifier of the running system, as read from the `VARIANT_ID=` field of `/etc/os-release`. If not set, resolves to an empty string. See os-release(5) for more information. |
+| "`%T`" | Directory for temporary files | This is either `/tmp` or the path "`$TMPDIR`", "`$TEMP`" or "`$TMP`" are set to. (Note that the directory may be specified without a trailing slash.) |
+| "`%V`" | Directory for larger and persistent temporary files | This is either `/var/tmp` or the path "`$TMPDIR`", "`$TEMP`" or "`$TMP`" are set to. (Note that the directory may be specified without a trailing slash.) |
+| "`%%`" | Single percent sign | Use "`%%`" in place of "`%`" to specify a single percent sign. |
+
+  
+
+## Examples
+
+**Example 1. Development Tools for Image-Based OS**
+
+We'll use the hypothetical "foobarOS" described in sysupdate.d(5) as our example base OS. The vast majority of foobarOS's users have no need for a compiler, build system, debugger, and other such development tools to be part of their OS. However, the developers of foobarOS itself need this build tooling to be available. So, foobarOS needs to provide a system extension image (see systemd-sysext(8)) containing these development tools, and this image must be updated in lock-step with the underlying base OS. This is a great use case for an optional OS feature, so let's define one:
+
+``` programlisting
+# /usr/lib/sysupdate.d/devel.feature
+[Feature]
+Description=Development Tools
+Documentation=https://developer.example.com/foobarOS/getting-started
+Enabled=false
+```
+
+The above defines the "`devel`" feature, and disables it by default. Now let's define a transfer that's associated with this feature:
+
+``` programlisting
+# /usr/lib/sysupdate.d/50-devel.transfer
+[Transfer]
+Features=devel
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_devel.raw.xz
+
+[Target]
+Type=regular-file
+Path=/var/lib/extensions
+MatchPattern=foobarOS_@v_devel.raw
+Mode=0444
+InstancesMax=2
+```
+
+With these two files, we have created a feature called "`devel`" that, when enabled, will download and decompress the appropriate version of "`https://download.example.com/foobarOS_@v_devel.raw.xz`" into "`/var/lib/extensions/foobarOS_@v_devel.raw`" during each OS update.
+
+The developers of foobarOS can enable the "`devel`" feature on their workstations by creating the following drop-in:
+
+``` programlisting
+# /etc/sysupdate.d/devel.feature.d/enable.conf
+[Feature]
+Enabled=true
+```
+
+  
+
+**Example 2. Proprietary Drivers**
+
+Suppose that many of foobarOS's users have a GPU manufactured by the MVISUAL corporation. Due to lack of documentation and difficulty in reverse-engineering the hardware, the open-source drivers for MVISUAL GPUs are unable to make proper use of available graphics and compute performance. MVISUAL provides a redistributable proprietary driver for their cards, and foobarOS's developers distribute them to address their users' needs.
+
+MVISUAL's driver has a couple different parts that must be installed for it to function: a UKI addon to configure the kernel command-line, an initrd system extension image to add the MVISUAL kernel module into the initrd, and a regular system extension image to add the proprietary OpenGL and Vulkan userspace drivers. All of these should be version-locked to the core OS.
+
+Let's start by defining an optional feature named "`mvisual-driver`":
+
+``` programlisting
+# /usr/lib/sysupdate.d/mvisual-driver.feature
+[Feature]
+Description=MVISUAL Proprietary GPU Driver
+Documentation=https://support.example.com/foobarOS/mvisual
+AppStream=https://metadata.example.com/mvisual-driver-%A.xml.gz
+```
+
+Note that we define AppStream metadata for this feature, because we want software centers to present it to end-users. Next, let's define the corresponding transfers:
+
+``` programlisting
+# /usr/lib/sysupdate.d/50-mvisual-userspace.transfer
+[Transfer]
+Features=mvisual-driver
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_mvisual_userspace.raw.xz
+
+[Target]
+Type=regular-file
+Path=/var/lib/extensions
+MatchPattern=foobarOS_@v_mvisual.raw
+Mode=0444
+InstancesMax=2
+```
+
+``` programlisting
+# /usr/lib/sysupdate.d/70-mvisual-initrd.transfer
+[Transfer]
+Features=mvisual-driver
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_mvisual_initrd.raw.xz
+
+[Target]
+Type=regular-file
+Path=/EFI/Linux
+PathRelativeTo=boot
+MatchPattern=foobarOS_@v.efi.extra.d/foobarOS_mvisual.raw
+Mode=0444
+InstancesMax=2
+```
+
+``` programlisting
+# /usr/lib/sysupdate.d/90-mvisual-addon.transfer
+[Transfer]
+Features=mvisual-driver
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_mvisual_addon.efi.xz
+
+[Target]
+Type=regular-file
+Path=/EFI/Linux
+PathRelativeTo=boot
+MatchPattern=foobarOS_@v.efi.extra.d/foobarOS_mvisual.addon.efi
+Mode=0444
+InstancesMax=2
+```
+
+  
+
+**Example 3. Intersecting Features**
+
+Suppose that MVISUAL releases special tooling to help a distribution developer troubleshoot crashes in their proprietary driver. Let's define a transfer:
+
+``` programlisting
+# /usr/lib/sysupdate.d/50-mvisual-debugger.transfer
+[Transfer]
+RequisiteFeatures=devel mvisual-driver
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_devel.raw.xz
+
+[Target]
+Type=regular-file
+Path=/var/lib/extensions
+MatchPattern=foobarOS_@v_devel.raw
+Mode=0444
+InstancesMax=2
+```
+
+This transfer will be used only if both the "`devel`" and "`mvisual-driver`" features are enabled.
+
+  
+
+## See Also
+
+systemd(1), systemd-sysupdate(8), sysupdate.d(5)
