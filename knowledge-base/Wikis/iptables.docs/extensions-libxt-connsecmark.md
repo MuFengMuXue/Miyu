@@ -1,9 +1,0 @@
-# Extensions / Libxt CONNSECMARK
-
-This module copies security markings from packets to connections (if unlabeled), and from connections back to packets (also only if unlabeled). Typically used in conjunction with SECMARK, it is valid in the **security** table (for backwards compatibility with older kernels, it is also valid in the **mangle** table).
-
-**--save**
-If the packet has a security marking, copy it to the connection if the connection is not marked.
-
-**--restore**
-If the packet does not have a security marking, and the connection does, copy the security marking from the connection to the packet.

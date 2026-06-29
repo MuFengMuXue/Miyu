@@ -1,5 +1,0 @@
-# Extensions / Libxt Length
-
-This module matches the length of the layer-3 payload (e.g. layer-4 packet) of a packet against a specific value or range of values.
-
-\[**!**\] **--length** *length*\[**:***length*\]

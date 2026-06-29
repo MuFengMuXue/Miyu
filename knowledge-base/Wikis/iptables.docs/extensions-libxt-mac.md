@@ -1,4 +1,0 @@
-# Extensions / Libxt Mac
-
-\[**!**\] **--mac-source** *address*
-Match source MAC address. It must be of the form XX:XX:XX:XX:XX:XX. Note that this only makes sense for packets coming from an Ethernet device and entering the **PREROUTING**, **FORWARD** or **INPUT** chains.
