@@ -1,3 +1,0 @@
-You can track the latest compatibility reports from the community on [ProtonDB](https://www.protondb.com/) (formerly known as Steam Play Community Reports). Reports for a specific game are available under url `https://www.protondb.com/app/<appid>`, e.g. [reports for Doom (2016)](https://www.protondb.com/app/379720). The site uses rating system similar to [Wine AppDB rating](https://wiki.winehq.org/AppDB_Rating_Definitions).
-
-ProtonDB provides [statistics of all reports](https://www.protondb.com/stats). Raw reports can be downloaded from [here](https://github.com/bdefore/protondb-data).

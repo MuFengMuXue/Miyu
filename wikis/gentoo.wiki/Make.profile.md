@@ -1,3 +1,0 @@
-The **[/etc/portage/make.profile/]** or **[/etc/make.profile/]** directories are usually symlinked to the correct profile in [[/var/db/repos/gentoo/profiles](https://wiki.gentoo.org/wiki//var/db/repos/gentoo/profiles "/var/db/repos/gentoo/profiles")].
-
-For more detailed information see the [Profile (Portage)](https://wiki.gentoo.org/wiki/Profile_(Portage) "Profile (Portage)") article and the [/etc/portage/make.profile] related sections in [man 5 portage].

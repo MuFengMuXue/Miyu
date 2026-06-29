@@ -1,6 +1,0 @@
-# Extensions / Libxt CHECKSUM
-
-This target selectively works around broken/old applications. It can only be used in the mangle table.
-
-**--checksum-fill**
-Compute and fill in the checksum in a packet that lacks a checksum. This is particularly useful, if you need to work around old applications such as dhcp clients, that do not work well with checksum offloads, but don't want to disable checksum offload in your device.

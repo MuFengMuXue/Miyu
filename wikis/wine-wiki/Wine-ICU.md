@@ -1,1 +1,0 @@
-Wine-ICU is a package that provides Unicode org's ICU dlls.
