@@ -1,0 +1,16 @@
+# pam_misc_setenv(3)
+
+## Name
+pam_misc_setenv — BSD like PAM environment variable setting
+
+## DESCRIPTION
+
+This function performs a task equivalent to `pam_putenv(3)`, its syntax is, however, more like the BSD style function; `setenv()`. The `name` and `value` are concatenated with an '=' to form a name=value and passed to `pam_putenv()`. If, however, the PAM variable is already set, the replacement will only be applied if the last argument, `readonly`, is zero.
+
+## SEE ALSO
+
+`pam_putenv(3)`, `pam(8)`
+
+## STANDARDS
+
+The `pam_misc_setenv` function is part of the `libpam_misc` Library and not defined in any standard.

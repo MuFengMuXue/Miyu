@@ -1,0 +1,226 @@
+# Man / Lvremove
+
+```text
+LVREMOVE(8)                  System Manager's Manual                 LVREMOVE(8)
+
+NAME
+     lvremove —— Remove logical volume(s) from the system
+
+SYNOPSIS
+     lvremove position_args
+            [ option_args ]
+
+DESCRIPTION
+     lvremove  removes one or more LVs. For standard LVs, this returns the logi‐
+     cal extents that were used by the LV to the VG for use by other LVs.
+
+     Confirmation will be requested before deactivating any active LV  prior  to
+     removal.   LVs  cannot  be deactivated or removed while they are open (e.g.
+     if they contain a mounted filesystem). Removing an origin LV will also  re‐
+     move all dependent snapshots.
+
+     When  a  single force option is used, LVs are removed without confirmation,
+     and the command will try to deactivate unused LVs.
+
+     To remove damaged LVs, two force options may be required (-ff).
+
+     Historical LVs
+
+     If the configuration setting metadata/record_lvs_history is enabled and the
+     LV being removed forms part of the history of at least one LV that is still
+     present, then a simplified representation of the LV will be retained.  This
+     includes  the  time  of removal (lv_time_removed reporting field), creation
+     time (lv_time), name (lv_name), LV uuid (lv_uuid) and  VG  name  (vg_name).
+     This allows later reporting to see the ancestry chain of thin snapshot vol‐
+     umes, even after some intermediate LVs have been removed. The names of such
+     historical  LVs  acquire a hyphen as a prefix (e.g. '-lvol1') and cannot be
+     reactivated.  Use lvremove a second time, with the hyphen,  to  remove  the
+     record of the former LV completely.
+
+USAGE
+     lvremove VG|LV|Tag|Select ...
+            [ -A|--autobackup y|n ]
+            [ -f|--force ... ]
+            [ -S|--select String ]
+            [ --nohistory ]
+            [ --noudevsync ]
+            [ --reportformat basic|json|json_std ]
+            [ COMMON_OPTIONS ]
+
+     ——
+
+     Common options for lvm:
+            [ -d|--debug ... ]
+            [ -h|--help ]
+            [ -q|--quiet ... ]
+            [ -t|--test ]
+            [ -v|--verbose ... ]
+            [ -y|--yes ]
+            [ --commandprofile String ]
+            [ --config String ]
+            [ --devices PV ]
+            [ --devicesfile String ]
+            [ --driverloaded y|n ]
+            [ --journal String ]
+            [ --lockopt String ]
+            [ --longhelp ]
+            [ --nohints ]
+            [ --nolocking ]
+            [ --profile String ]
+            [ --version ]
+
+OPTIONS
+     -A|--autobackup y|n
+            Specifies  if  metadata  should  be  backed up automatically after a
+            change.  Enabling this is strongly advised!  See vgcfgbackup(8)  for
+            more information.
+
+     --commandprofile String
+            The   command   profile  to  use  for  command  configuration.   See
+            lvm.conf(5) for more information about profiles.
+
+     --config String
+            Config settings for the command.  These  override  lvm.conf(5)  set‐
+            tings.   The  String arg uses the same format as lvm.conf(5), or may
+            use section/field syntax.   See  lvm.conf(5)  for  more  information
+            about config.
+
+     -d|--debug ...
+            Set  debug level. Repeat from 1 to 6 times to increase the detail of
+            messages sent to the log file and/or syslog (if configured).
+
+     --devices PV
+            Restricts the devices that are visible and accessible  to  the  com‐
+            mand.  Devices not listed will appear to be missing. This option can
+            be  repeated,  or  accepts  a  comma separated list of devices. This
+            overrides the devices file.
+
+     --devicesfile String
+            A file listing devices that LVM should use.  The file must exist  in
+            #DEFAULT_SYS_DIR#/devices/  and  is  managed  with the lvmdevices(8)
+            command.  This overrides the lvm.conf(5) devices/devicesfile and de‐
+            vices/use_devicesfile settings.
+
+     --driverloaded y|n
+            If set to no, the command will not  attempt  to  use  device-mapper.
+            For testing and debugging.
+
+     -f|--force ...
+            Override  various  checks,  confirmations and protections.  Use with
+            extreme caution.
+
+     -h|--help
+            Display help text.
+
+     --journal String
+            Record information in the systemd journal.  This information  is  in
+            addition to information enabled by the lvm.conf log/journal setting.
+            command:  record  information about the command.  output: record the
+            default command output.  debug: record full command debugging.
+
+     --lockopt String
+            Used to pass options for special cases to lvmlockd.  See lvmlockd(8)
+            for more information.
+
+     --longhelp
+            Display long help text.
+
+     --nohints
+            Do not use the hints file to locate devices for PVs. A  command  may
+            read  more  devices to find PVs when hints are not used. The command
+            will still perform standard hint file invalidation  where  appropri‐
+            ate.
+
+     --nohistory
+            Do  not record history of LVs being removed.  This has no effect un‐
+            less the configuration setting  metadata/record_lvs_history  is  en‐
+            abled.
+
+     --nolocking
+            Disable  locking.  Use with caution, concurrent commands may produce
+            incorrect results.
+
+     --noudevsync
+            Disables udev synchronization. The process will not wait for notifi‐
+            cation from udev. It will continue irrespective of any possible udev
+            processing in the background. Only use this if udev is  not  running
+            or has rules that ignore the devices LVM creates.
+
+     --profile String
+            An alias for --commandprofile or --metadataprofile, depending on the
+            command.
+
+     -q|--quiet ...
+            Suppress  output  and log messages. Overrides --debug and --verbose.
+            Repeat once to also suppress any prompts with answer 'no'.
+
+     --reportformat basic|json|json_std
+            Overrides current output format for reports which is  defined  glob‐
+            ally  by  the report/output_format setting in lvm.conf(5).  basic is
+            the original format with columns and rows.  If there  is  more  than
+            one report per command, each report is prefixed with the report name
+            for  identification.  json  produces  report  output in JSON format.
+            json_std produces report output in JSON format which is more compli‐
+            ant with JSON standard.  See lvmreport(7) for more information.
+
+     -S|--select String
+            Select objects for processing and reporting based on specified  cri‐
+            teria.  The criteria syntax is described by --select help and lvmre‐
+            port(7).   For reporting commands, one row is displayed for each ob‐
+            ject matching the criteria.  See --options help for  selectable  ob‐
+            ject  fields.   Rows  can be displayed with an additional "selected"
+            field (-o selected) showing 1 if the row matches the selection and 0
+            otherwise.  For non-reporting commands which process  LVM  entities,
+            the selection is used to choose items to process.
+
+     -t|--test
+            Run in test mode. Commands will not update metadata.  This is imple‐
+            mented  by disabling all metadata writing but nevertheless returning
+            success to the calling function. This may lead to unusual error mes‐
+            sages in multi-stage operations if a tool  relies  on  reading  back
+            metadata it believes has changed but hasn't.
+
+     -v|--verbose ...
+            Set  verbose  level. Repeat from 1 to 4 times to increase the detail
+            of messages sent to stdout and stderr.
+
+     --version
+            Display version information.
+
+     -y|--yes
+            Do not prompt for confirmation interactively but always  assume  the
+            answer yes. Use with extreme caution.  (For automatic no, see -qq.)
+
+VARIABLES
+     VG     Volume Group name.  See lvm(8) for valid names.
+
+     LV     Logical  Volume name.  See lvm(8) for valid names.  An LV positional
+            arg generally includes the VG name and LV name, e.g. VG/LV.
+
+     Tag    Tag name.  See lvm(8) for information about tag names and using tags
+            in place of a VG, LV or PV.
+
+     Select
+            Select indicates that a required positional parameter can be omitted
+            if the --select option is used.  No arg appears in this position.
+
+     String
+            See the option description for information about the string content.
+
+     Size[UNIT]
+            Size is an input number that accepts an optional unit.  Input  units
+            are always treated as base two values, regardless of capitalization,
+            e.g.  'k'  and  'K'  both  refer to 1024.  The default input unit is
+            specified by letter, followed by |UNIT.  UNIT represents other  pos‐
+            sible input units: b|B is bytes, s|S is sectors of 512 bytes, k|K is
+            KiB,  m|M  is  MiB,  g|G is GiB, t|T is TiB, p|P is PiB, e|E is EiB.
+            (This should not be confused with the output control --units,  where
+            capital letters mean multiple of 1000.)
+
+ENVIRONMENT VARIABLES
+     See  lvm(8)  for  information about environment variables used by lvm.  For
+     example, LVM_VG_NAME can generally be substituted for a required VG parame‐
+     ter.
+
+Red Hat, Inc.                  LVM TOOLS #VERSION#                   LVREMOVE(8)
+```

@@ -1,0 +1,45 @@
+# Man / Pasuspender
+
+.
+-->
+
+
+     pasuspender [ options ] --  PROGRAM  [ ARGUMENTS ... ]
+     pasuspender  --help
+     pasuspender  --version
+
+
+      pasuspender  is a tool that can be used to tell a
+    local PulseAudio sound server to temporarily suspend access to the
+    audio devices, to allow other
+    applications access them directly.  pasuspender  will
+    suspend access to the audio devices, fork a child process, and
+    when the child process terminates, resume access again.
+
+     Make sure to include  --  in
+    your  pasuspender  command line before passing the
+    subprocess command line (as shown
+    above). Otherwise  pasuspender  itself might end up
+    interpreting the command line switches and options you intended to
+    pass to the subprocess.
+
+
+        -h | --help
+
+        Show help.
+
+
+        --version
+
+        Show version information.
+
+
+        -s | --server=  SERVER
+
+        Specify the sound server to connect to.
+
+
+     The PulseAudio Developers  ; PulseAudio is available from
+
+
+       ,  ,  ,

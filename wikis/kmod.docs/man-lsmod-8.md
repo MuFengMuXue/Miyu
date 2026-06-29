@@ -1,0 +1,38 @@
+# LSMOD(8) "kmod" "lsmod"
+
+
+## Name
+
+lsmod - Show the status of modules in the Linux Kernel
+
+
+## Synopsis
+
+`lsmod` [_OPTIONS_]
+
+
+## Description
+
+`lsmod` is a trivial program which nicely formats the contents of the
+_/proc/modules_, showing what kernel modules are currently loaded.
+
+
+## Options
+
+`-s`, `--syslog`
+	Send errors to syslog instead of standard error.
+
+`-v`, `--verbose`
+	Print messages about what the program is doing. Usually `lsmod` prints
+	messages only if something goes wrong.
+
+`-V`, `--version`
+	Show version of program and exit.
+
+`-h`, `--help`
+	Print the help message and exit.
+
+
+## See Also
+
+`insmod`(8), `modprobe`(8), `modinfo`(8), `depmod`(8)

@@ -1,0 +1,37 @@
+On 2.-3. February 2013, the [Free and Open Source Software Developers\' European Meeting FOSDEM 2013](https://fosdem.org/2013/) will take place in Brussels, Belgium.
+
+Naturally a Gentoo crowd will be there; this page is intended to collect public information about our presence and help organizing stuff.
+
+## [Developers available at FOSDEM]
+
+  ---------------- ------------------ ------------------ ----------------------------- ------------------------- ---------------------------------------------- ----------
+  Nick             Arrival            Departure          Will be at Beer Event (Fri)   Will be at Dinner (Sat)   Spoken Languages                               Comments
+  betelgeuse       Fri \~19:00@BRU    Mon \~10:00@BRU    Yes                           Yes                       English, Finnish, Swedish, French
+  prometheanfire   Thu 0750           Tues 1000          Yes                           Yes                       English
+  robbat2          Thurs 1735 @ BRU   Tues               Yes (+1)                      Yes (+1)                  English
+  miska            Fri                Sun                Yes                                                     English
+  Zorry            Fri 1410           Mon 1715           Yes (assume)                  Yes (assume)              English, Swedish
+  lejonet          Fri 1410           Mon 1715           Yes (assume)                  Yes (assume)              English, Swedish
+  klondike         Fri 0835           Mon 2025           Yes (assume)                  Yes (assume)              Spanish, Valencian, English, Swedish, French
+  mduft            Fri 18:20@BRU      Sun 19:10@BRU      Yes                           Yes                       German, English, French
+  haubi            Fri 18:20@BRU      Sun 19:10@BRU      Yes                           Yes (+1)                  German, English
+  eras             Fri 14:25@BRU      Sun 08:40@BRU      Yes                           Yes                       English, Turkish
+  grobian          ??                 ??                 ??                            ??                        ??
+  klausman         Fri 19:30@BRU      Monday 11:00@BRU   yes                           yes                       German, English
+  hwoarang         Fri \~16:00@BRU    Mon \~09:00@BRU    Yes                           No                        English
+  dberkholz        ??                 ??                 ??                            ??                        ??
+  tomk             Wed 16:10          Mon 13:00          Yes (+2)                      Yes (+2)                  English, Spanish
+  gregkh                                                                                                         English
+  graaff           Fri 19:00          Sun 17:00          Yes                           Yes                       English, Dutch
+  ramereth         Fri 18:00          Mon 11:00          Yes                           Yes                       English
+  ---------------- ------------------ ------------------ ----------------------------- ------------------------- ---------------------------------------------- ----------
+
+Other devs around for talks, but didn\'t add themselves to this wiki page: cryos, nirbheek
+
+## [IRC]
+
+Join #gentoo-meetings \... :) No, join #gentoo-fosdem \... we are cooler :D
+
+## [Talks]
+
+dberkholz will give a talk on Gentoo package. betelgeuse will keep a bof to group people together for the dinner on Saturday.

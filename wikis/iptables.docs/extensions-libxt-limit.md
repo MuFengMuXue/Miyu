@@ -1,0 +1,11 @@
+# Extensions / Libxt Limit
+
+This module matches at a limited rate using a token bucket filter. A rule using this extension will match until this limit is reached. It can be used in combination with the **LOG** target to give limited logging, for example.
+
+xt_limit has no negation support — you will have to use -m hashlimit ! --hashlimit *rate* in this case whilst omitting --hashlimit-mode.
+
+**--limit** *rate*\[**/second**\|**/minute**\|**/hour**\|**/day**\]
+Maximum average matching rate: specified as a number, with an optional \`/second', \`/minute', \`/hour', or \`/day' suffix; the default is 3/hour.
+
+**--limit-burst** *number*
+Maximum initial number of packets to match: this number gets recharged by one every time the limit specified above is not reached, up to this number; the default is 5.

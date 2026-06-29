@@ -1,0 +1,67 @@
+# NAME
+
+sane-dc240 - SANE backend for Kodak DC240 Digital Camera
+
+# DESCRIPTION
+
+The **sane-dc240** library implements a SANE (Scanner Access Now Easy) backend that provides access to the Kodak DC240 camera. THIS IS EXTREMELY ALPHA CODE! USE AT YOUR OWN RISK!!
+
+# DEVICE NAMES
+
+The current version of the backend only allows one camera to be connected. The device name is always "0".
+
+# CONFIGURATION
+
+The contents of the *dc240.conf* specify the serial port and baud rate to use. The **baud** rate specifies the maximum rate to use while downloading pictures. (The camera is always initialized using 9600 baud, then switches to the higher rate). On a 450MHz Pentium, I usually have no problems downloading at 115200 baud, though the camera sometimes has to resend packets due to lost characters. Results are better when the "interrupt-unmask flag" is set in the IDE driver (*hdparm -u1*). Supported baud rates are: 9600, 19200, 38400, 57600, and 115200.
+
+The **dumpinquiry** line causes some information about the camera to be printed.
+
+**cmdrespause** specifies how many usec (1,000,000ths of a second) to wait between writing the command and reading the result. 125000 seems to be the lowest I could go reliably.
+
+**breakpause** specifies how many usec (1,000,000ths of a second) between sending the "back to default" break and sending commands.
+
+Empty lines and lines starting with a hash mark (#) are ignored. A sample configuration file is shown below:
+
+> port=/dev/ttyS0
+> \# this is a comment
+> baud=115200
+> dumpinquiry
+> cmdrespause=125000
+> breakpause=1000000
+
+# FILES
+
+*@CONFIGDIR@/dc240.conf*
+The backend configuration file (see also description of **SANE_CONFIG_DIR** below).
+
+*@LIBDIR@/libsane-dc240.a*
+The static library implementing this backend.
+
+*@LIBDIR@/libsane-dc240.so*
+The shared library implementing this backend (present on systems that support dynamic loading).
+
+# ENVIRONMENT
+
+**SANE_CONFIG_DIR**
+This environment variable specifies the list of directories that may contain the configuration file. On \*NIX systems, the directories are separated by a colon (\`:'), under OS/2, they are separated by a semi-colon (\`;'). If this variable is not set, the configuration file is searched in two default directories: first, the current working directory (".") and then in *@CONFIGDIR@.* If the value of the environment variable ends with the directory separator character, then the default directories are searched after the explicitly specified directories. For example, setting **SANE_CONFIG_DIR** to "/tmp/config:" would result in directories *tmp/config*, *.*, and *@CONFIGDIR@* being searched (in this order).
+
+**SANE_DEBUG_DC240**
+If the library was compiled with debugging support enabled, this environment variable controls the debug level for this backend. A value of 128 requests maximally copious debug output; smaller levels reduce verbosity.
+
+# SEE ALSO
+
+**sane**(7)
+
+# AUTHOR
+
+Peter S. Fales
+
+This backend borrows heavily from the **sane-dc210**(5) backend by Brian J. Murrell which is based somewhat on the **sane-dc25**(5) backend by Peter Fales.
+
+The manpage was largely copied from the **sane-dc210**(5) manpage.
+
+# BUGS
+
+The major limitation that I know of is that the backend assumes the directory in the camera is 100dc240. Once the camera has taken more than 9999 pictures, the directory will increment to 101dc240. Not only should we check for the additional directory, but pictures may actually be found in multiple directories.
+
+More general comments, suggestions, and inquiries about frontends or SANE should go to the SANE Developers mailing list (see *http://www.sane-project.org/mailing-lists.html* for details). You must be subscribed to the list, otherwise your mail won't be sent to the subscribers.

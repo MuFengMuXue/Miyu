@@ -1,0 +1,31 @@
+# Extensions / Libxt Rpfilter
+
+Performs a reverse path filter test on a packet. If a reply to the packet would be sent via the same interface that the packet arrived on, the packet will match. Note that, unlike the in-kernel rp_filter, packets protected by IPSec are not treated specially. Combine this match with the policy match if you want this. Also, packets arriving via the loopback interface are always permitted. This match can only be used in the PREROUTING chain of the raw or mangle table.
+
+**--loose**
+Used to specify that the reverse path filter test should match even if the selected output device is not the expected one.
+
+**--validmark**
+Also use the packets' nfmark value when performing the reverse path route lookup.
+
+**--accept-local**
+This will permit packets arriving from the network with a source address that is also assigned to the local machine.
+
+**--invert**
+This will invert the sense of the match. Instead of matching packets that passed the reverse path filter test, match those that have failed it.
+
+Example to log and drop packets failing the reverse path filter test:
+
+iptables -t raw -N RPFILTER
+
+iptables -t raw -A RPFILTER -m rpfilter -j RETURN
+
+iptables -t raw -A RPFILTER -m limit --limit 10/minute -j NFLOG --nflog-prefix "rpfilter drop"
+
+iptables -t raw -A RPFILTER -j DROP
+
+iptables -t raw -A PREROUTING -j RPFILTER
+
+Example to drop failed packets, without logging:
+
+iptables -t raw -A RPFILTER -m rpfilter --invert -j DROP

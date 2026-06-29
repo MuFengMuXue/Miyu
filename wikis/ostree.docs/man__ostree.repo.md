@@ -1,0 +1,19 @@
+## Name
+
+ostree.repo — OSTree repository configuration and layout
+
+## Description
+
+An OSTree repository is structurally similar to a git repository; it is a content-addressed object store containing filesystem trees. However, unlike git, ostree is designed to store operating system binaries. It records the Unix uid and gid, permissions, as well as extended attributes.
+
+A repository can be in one of three modes; `bare`, which is designed as a hard link source for operating system checkouts, `bare-user`, which is like `bare` but works on systems that run as non-root as well as non-root containers, and `archive-z2`, which is designed for static HTTP servers.
+
+There is a system repository located at `/ostree/repo`. If no repository is specified -- either by a command-line option or the `OSTREE_REPO` environment variable -- the **ostree** as well as many API calls will use it by default.
+
+## Components of a repository
+
+The only user-editable component is the `config` file. For more information, see [ostree.repo-config(5)](man__ostree.repo-config.md).
+
+## See Also
+
+[ostree(1)](man__ostree.md), [ostree.repo-config(1)](man__ostree.repo-config.md)

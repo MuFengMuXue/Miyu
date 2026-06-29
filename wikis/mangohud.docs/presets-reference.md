@@ -1,0 +1,14 @@
+# MangoHud Presets Reference
+
+```ini
+[preset 1]
+no_display
+
+[preset 2]
+legacy_layout=0
+cpu_stats=0
+gpu_stats=0
+fps
+fps_only=1
+frametime=0
+```

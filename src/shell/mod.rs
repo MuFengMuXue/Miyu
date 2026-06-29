@@ -1,0 +1,144 @@
+pub mod bash;
+pub mod fish;
+pub mod zsh;
+
+use crate::i18n::text as t;
+use std::path::Path;
+
+pub fn print_reload_hint(shell: &str, hook_file: &Path) {
+    let source = match shell {
+        "fish" => format!("source {}", fish_quote(hook_file)),
+        "bash" | "zsh" => format!("source {}", shell_quote(hook_file)),
+        _ => return,
+    };
+    if current_parent_shell().as_deref() == Some(shell) {
+        println!(
+            "{}: {}",
+            t(
+                "run this in the current terminal to load it now",
+                "在当前终端运行此命令可立即加载"
+            ),
+            source
+        );
+    } else {
+        println!(
+            "{}",
+            t(
+                "open a new matching shell session for the hook to take effect",
+                "新开对应 shell 会话后 hook 将生效"
+            )
+        );
+    }
+}
+
+pub fn current_parent_shell() -> Option<String> {
+    let mut pid = std::process::id();
+    for _ in 0..8 {
+        let parent = parent_pid(pid)?;
+        let name = process_name(parent)?;
+        if matches!(name.as_str(), "fish" | "bash" | "zsh") {
+            return Some(name);
+        }
+        pid = parent;
+    }
+    None
+}
+
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_name = stat.rsplit_once(") ")?.1;
+    after_name.split_whitespace().nth(1)?.parse().ok()
+}
+
+fn process_name(pid: u32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
+fn fish_quote(path: &Path) -> String {
+    format!(
+        "'{}'",
+        path.display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+    )
+}
+
+pub fn looks_like_natural_language(input: &str) -> bool {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.chars().count() > 120 || trimmed.contains('\n') || trimmed.contains('\r') {
+        return false;
+    }
+    if starts_like_shell_fragment(trimmed) || contains_shell_syntax(trimmed) {
+        return false;
+    }
+    trimmed.chars().any(|char| !char.is_ascii()) || trimmed.split_whitespace().count() > 1
+}
+
+fn starts_like_shell_fragment(input: &str) -> bool {
+    let mut chars = input.chars();
+    let Some(first) = chars.next() else {
+        return true;
+    };
+    if matches!(first, '-' | '#' | '.' | '/' | '~') || first.is_ascii_digit() {
+        return true;
+    }
+    false
+}
+
+fn contains_shell_syntax(input: &str) -> bool {
+    input.chars().any(|ch| {
+        matches!(
+            ch,
+            '/' | '\\'
+                | '='
+                | '|'
+                | ';'
+                | '&'
+                | '<'
+                | '>'
+                | '$'
+                | '`'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | '*'
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_safe_natural_language() {
+        assert!(looks_like_natural_language("帮我查一下 niri 输入法"));
+        assert!(looks_like_natural_language(
+            "why is fcitx candidate window small"
+        ));
+    }
+
+    #[test]
+    fn rejects_pasted_list_and_shell_syntax() {
+        assert!(!looks_like_natural_language(
+            "- archlinux zen内核怎么安装驱动"
+        ));
+        assert!(!looks_like_natural_language("1. 我家离洗车店只有50M"));
+        assert!(!looks_like_natural_language("GTK_IM_MODULE=fcitx"));
+        assert!(!looks_like_natural_language("./target/release/miyu 查询"));
+    }
+}

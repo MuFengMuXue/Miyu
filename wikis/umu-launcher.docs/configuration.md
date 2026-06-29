@@ -1,0 +1,49 @@
+# NAME
+
+umu-run - configuration file
+
+# DESCRIPTION
+
+umu-run can optionally read a configuration file instead of reading
+environment variables set from the command line. The configuration file for
+umu-run must be written in *Tom's Obvious Minimal Language (TOML)*.
+
+In the configuration file, the table *umu* is required as well as the keys
+*prefix*, *proton* and *exe* which all must be basic strings. e.g.:
+
+```
+[umu]
+prefix = "$HOME/WINE/epic-games-store"
+exe = "$HOME/EpicGamesLauncher.exe"
+proton = "$HOME/.local/share/Steam/compatibilitytools.d/GE-Proton30"
+```
+
+Afterwards, run the command:
+```
+$ umu-run --config config.toml
+```
+
+# [umu] SECTION
+
+*exe*
+	Path to the game executable to run. Value must be a basic *string*.
+
+*proton*
+	Path to a Proton directory. Value must be a basic *string*.
+
+*prefix*
+	Path to a WINE prefix directory. Value must be a basic *string*.
+
+*game_id*
+	The umu id to assign to the game. Depending on the value assigned, a proton
+	fix will be applied to the prefix if available. Please refer to the *umu
+	database* for an extended list of game ids.
+
+*store*
+	The distribution platform of the executable. Value must be a basic *string*.
+	Expects the values: egs, gog, battlenet, amazon, humble, itchio, and ubisoft.
+
+*launch_args*
+	Launch arguments for the executable. Value must be a basic *string* or an
+	*array* of basic strings. When using a string, assumes each argument is
+	space-separated.

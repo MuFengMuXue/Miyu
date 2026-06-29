@@ -1,0 +1,154 @@
+# NAME
+
+sane-fujitsu - SANE backend for Fujitsu and Ricoh fi series scanners
+
+# DESCRIPTION
+
+The **sane-fujitsu** library implements a SANE (Scanner Access Now Easy) backend which provides access to most Fujitsu flatbed and ADF scanners, and the subsequent Ricoh models.
+
+This document describes backend version 140.
+
+# SUPPORTED HARDWARE
+
+This version supports every known model which speaks the Fujitsu SCSI and SCSI-over-USB protocols. Specifically, the SCSI M309x and M409x series, the SCSI fi-series, and most of the USB fi-, ScanSnap, & iX series scanners are supported. Please see the list at *http://www.sane-project.org/sane-supported-devices.html* for details.
+
+This backend may support other Fujitsu or newer Ricoh scanners. The best way to determine level of support is to test the scanner directly, or to collect a trace of the windows driver in action. Please contact the author for help or with test results.
+
+# UNSUPPORTED HARDWARE
+
+The following scanners are known NOT to work with this backend, either because they have an unsupported chipset, or an unsupported interface type. Some of these scanners may be supported by another backend.
+
+> --------------------------------------
+>     SCSI:        SERIAL:      USB:
+>     ------------ ------------ ------------
+>     ScanStation  M3093E/DE/EX fi-4110EOX/2
+>     ScanPartner  M3096EX      fi-4010CU
+>     SP-Jr        M3097E+/DE   S300/S300M
+>     SP-10/10C    M3099A/EH/EX S1300/S1100
+>     SP-15C/300C               fi-60F/65F
+>     SP-600C/620C              fi-5015C
+>                               SP-2x/3x
+
+# OPTIONS
+
+Effort has been made to expose all hardware options, including:
+
+**source s**
+
+> Selects the source for the scan. Options may include "Flatbed", "ADF Front", "ADF Back", "ADF Duplex", "Card Front", "Card Back", "Card Duplex".
+
+**mode m**
+
+> Selects the mode for the scan. Options may include "Lineart", "Halftone", "Gray", and "Color".
+
+**resolution, y-resolution**
+
+> Controls scan resolution. Setting **--resolution** also sets **--y-resolution,** though this behavior is overridden by some frontends.
+
+**tl-x, tl-y, br-x, br-y**
+
+> Sets scan area upper left and lower right coordinates. These are renamed **t, l, x, y** by some frontends.
+
+**page-width, page-height**
+
+> Sets paper size. Used by scanner to determine centering of scan coordinates when using the ADF (Automatic Document Feeder) and to detect double feed errors.
+
+Other options will be available based on the capabilities of the scanner: machines with IPC or DTC will have additional enhancement options, those with CMP will have compression options, those with a printer will have a group of endorser options.
+
+Additionally, several 'software' options are exposed by the backend. These are reimplementations of features provided natively by larger scanners, but running on the host computer. This enables smaller machines to have similar capabilities. Please note that these features are somewhat simplistic, and may not perform as well as the native implementations. Note also that these features all require that the driver cache the entire image in memory. This will almost certainly result in a reduction of scanning speed.
+
+**swcrop**
+
+> Requests the driver to detect the extremities of the paper within the larger image, and crop the empty edges.
+
+**swdeskew**
+
+> Requests the driver to detect the rotation of the paper within the larger image, and counter the rotation.
+
+**swdespeck X**
+
+> Requests the driver to find and remove dots of X diameter or smaller from the image, and fill the space with the average surrounding color.
+
+Use *'scanimage --help'* to get a list, but be aware that some options may be settable only when another option has been set, and that advanced options may be hidden by some frontend programs.
+
+# CONFIGURATION FILE
+
+The configuration file *fujitsu.conf* is used to tell the backend how to look for scanners, and provide options controlling the operation of the backend. This file is read each time the frontend asks the backend for a list of scanners, generally only when the frontend starts. If the configuration file is missing, the backend will be unable to locate any scanners.
+
+Scanners can be specified in the configuration file in 4 ways:
+
+"scsi FUJITSU"
+
+> Requests backend to search all scsi buses in the system for a device which reports itself to be a scanner made by 'FUJITSU'.
+
+"scsi /dev/sg0" (or other scsi device file)
+
+> Requests backend to open the named scsi device. Only useful if you have multiple compatible scanners connected to your system, and need to specify one. Probably should not be used with the other "scsi" line above.
+
+"usb 0x04c5 0x1042" (or other vendor/product ids)
+
+> Requests backend to search all usb buses in the system for a device which uses that vendor and product id. The device will then be queried to determine if it is a supported scanner.
+
+"usb /dev/usb/scanner0" (or other device file)
+
+> Some systems use a kernel driver to access usb scanners. This method is untested.
+
+The only configuration option supported is "buffer-size=xxx", allowing you to set the number of bytes in the data buffer to something other than the compiled-in default, 65536 (64K). Some users report that their scanner will "hang" mid-page, or fail to transmit the image if the buffer is not large enough.
+
+Note: This option may appear multiple times in the configuration file. It only applies to scanners discovered by 'scsi/usb' lines that follow this option.
+
+Note: The backend does not place an upper bound on this value, as some users required it to be quite large. Values above the default are not recommended, and may crash your OS or lockup your scsi card driver. You have been warned.
+
+# ENVIRONMENT
+
+The backend uses a single environment variable, **SANE_DEBUG_FUJITSU**, which enables debugging output to stderr. Valid values are:
+
+> 5 Errors
+> 10 Function trace
+> 15 Function detail
+> 20 Option commands
+> 25 SCSI/USB trace
+> 30 SCSI/USB writes
+> 31 SCSI/USB reads
+> 35 Useless noise
+
+# KNOWN ISSUES
+
+Flatbed units may fail to scan at maximum area, particularly at high resolution.
+
+Any model that does not support VPD during inquiry will not function until an override is added to the backend.
+
+CCITT Fax compression used by older scanners is not supported.
+
+JPEG output is supported by the backend, but not by the SANE protocol, so is disabled in this release. It can be enabled if you rebuild from source.
+
+Network interfaces are not supported on any scanner model.
+
+# CREDITS
+
+m3091 backend: Frederik Ramm \<*frederik a t remote d o t org*\>
+m3096g backend: Randolph Bentson \<*bentson a t holmsjoen d o t com*\>
+(with credit to the unnamed author of the coolscan driver)
+fujitsu backend, m3093, fi-4340C, ipc, cmp, long-time maintainer:
+Oliver Schirrmeister \<*oschirr a t abm d o t de*\>
+m3092: Mario Goppold \<*mgoppold a t tbzpariv d o t tcc-chemnitz dot de*\>
+fi-4220C and basic USB support: Ron Cemer \<*ron a t roncemer d o t com*\>
+fi-4120, fi-series color, backend re-write, jpeg, current maintainer: m. allan noah: \<*kitno455 a t gmail d o t com*\>
+
+JPEG output and low memory usage support funded by: Archivista GmbH *www.archivista.ch*
+
+Endorser support funded by: O A S Oilfield Accounting Service Ltd 1500, 840 - 7th Avenue S.W. Calgary, Alberta T2P 3G2 Canada 1-403-263-2600 *www.oas.ca*
+
+Automatic length detection support funded by: Martin G. Miller *mgmiller at optonline.net*
+
+Hardware donated, software image enhancement and fi-6/7xxx support funded by: PFU America, Inc. *fujitsuscanners.com*
+
+iX500 support funded by: Prefix Computer Services *www.prefixservice.com*
+
+# SEE ALSO
+
+**sane**(7), **sane-scsi**(5), **sane-usb**(5), **sane-sp15c**(5), **sane-avision**(5), **sane-epjitsu**(5)
+
+# AUTHOR
+
+m\. allan noah: \<kitno455 a t gmail d o t com\>

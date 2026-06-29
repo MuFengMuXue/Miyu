@@ -1,0 +1,233 @@
+# BackupPC
+
+BackupPC is a high-performance, enterprise-grade system for backing up Unix, Linux, WinXX, and MacOSX PCs, desktops and laptops to a server's disk. BackupPC is highly configurable and easy to install and maintain.
+
+Given the ever decreasing cost of disks and raid systems, it is now practical and cost effective to backup a large number of machines onto a server's local disk or network storage. For some sites this might be the complete backup solution. For other sites additional permanent archives could be created by periodically backing up the server to tape.
+
+Note that BackupPC only provides file-based backups and restores. In particular, it is not suitable out-of-the-box for "hot" database backups (although pre-backup hooks can be used to dump databases and do "cold" backups); you will need tools like xtrabackup for that purpose. Also, BackupPC only offers limited handling of opened files.  Make sure to read about the limitations of BackupPC and test a backup-and-restore cycle before you actually need to resort to it for real.
+
+## Installation
+Install .
+Install  and  if you want to use rsync as a transport, and  to display usage data in the CGI interface.
+
+Then start/enable .
+
+## Placing data directories on a separate partition
+The BackupPC pool is stored by default under , which also serves as the home directory for the backuppc user.
+This path can be changed via the {{ic|$Conf{TopDir}}} entry in .
+Typical reasons are that you keep your system on a fast, but expensive and small, SSD and need to store the backups on a traditional hard disk, or that you want to keep the backup pool on a partition managed by an LVM to be able to resize to partition according to changing demands.
+
+The documentation suggests to not change the {{ic|$Conf{TopDir}}} entry, but instead use symlinks.  However, be careful when doing so because package upgrades for backuppc will replace symlinks for both  or any of the default subdirectories ,  or  by empty directories without any warning.
+
+Thus, it is recommended to either use bind mounts in fstab instead of symlinks, or to deliberately ignore the recommendation in  and change {{ic|$Conf{TopDir}}} nevertheless. Alternatively, use pacman's pre- and post-transaction hooks such as the following (remember to make the shell scripts executable):
+
+{{hc|/etc/pacman.d/hooks/backuppc-restore-symlinks-post.sh|
+#!/usr/bin/bash
+
+if [ ! -d /tmp/backuppc-symlinks-cache ]; then
+    exit 0
+fi
+
+if [ -L /tmp/backuppc-symlinks-cache/backuppc ]; then
+    rmdir /var/lib/backuppc/{cpool,pc,pool,}
+    mv /tmp/backuppc-symlinks-cache/backuppc /var/lib/
+    echo "==> Restored /var/lib/backuppc => $(readlink /var/lib/backuppc)"
+fi
+
+for dir in cpool pc pool; do
+    if [ -L /tmp/backuppc-symlinks-cache/$dir ]; then
+        rmdir /var/lib/backuppc/$dir
+        mv /tmp/backuppc-symlinks-cache/$dir /var/lib/backuppc/
+        echo "==> Restored /var/lib/backuppc/${dir} => $(readlink /var/lib/backuppc/$dir)"
+    fi
+done
+
+if [ -f /tmp/backuppc-symlinks-cache/was-running ]; then
+    echo '==> BackupPC service was stopped for upgrade.'
+    echo '==> Check the configuration and run `systemctl start backuppc.service` to restart the service.'
+    rm -f /tmp/backuppc-symlinks-cache/was-running
+fi
+
+rmdir --ignore-fail-on-non-empty /tmp/backuppc-symlinks-cache &>/dev/null}}
+
+{{hc|/etc/pacman.d/hooks/backuppc-restore-symlinks-pre.sh|
+#!/usr/bin/bash
+
+if systemctl is-active backuppc.service &>/dev/null; then
+    systemctl stop backuppc.service
+    mkdir -p /tmp/backuppc-symlinks-cache
+    touch /tmp/backuppc-symlinks-cache/was-running
+fi
+
+for dir in /var/lib/backuppc/{cpool,pc,pool,}; do
+    if [ -L $dir ]; then
+        mkdir -p /tmp/backuppc-symlinks-cache
+        mv $dir /tmp/backuppc-symlinks-cache
+    fi
+done}}
+
+## Apache configuration
+BackupPC has a web interface that allows you to easily control it. You can access it using Apache and mod_perl or a C wrapper but other webservers like  works too. Install .
+
+## Edit Apache configuration
+BackupPC's web UI needs to run as the user backuppc, but Apache normally runs under the user http. There are several ways to fix this. The two demonstrated here are common for single-purpose servers (Apache is only used to serve the BackupPC UI) or for multi-purpose servers (Apache may also server other websites under the regular http user).
+
+Setting up Apache for single-purpose use is a bit easier but not as flexible.
+
+## General settings
+Edit . Set administrator name:
+ $Conf{CgiAdminUsers} = 'admin';
+Next, we need to add a users file and set the admin password:
+ # htpasswd -c /etc/backuppc/backuppc.users admin
+
+The BackupPC-Webfrontend is initially configured so that you can only access it from the localhost. If you want to access it from all machines in your network, you have to edit . Edit the line:
+ Require ip 127.0.0.1
+to:
+ Require ip 127.0.0.1 192.168.0
+where you have to replace 192.168.0 to your corresponding IP-Adresses you want to gain access from.
+After one of the configuration steps below has also been performed, the Apache service.
+
+## Single-purpose Apache settings
+Install .
+
+Edit the Apache configuration file to load mod_perl, tell Apache to run as user backuppc and to include :
+
+## Multi-purpose Apache settings
+Instead of globally changing the Apache user and group like in the example above, we will instead make Apache run just the BackupPC CGI script as the backuppc user and leave the default user alone. This method uses mod_cgi to call a wrapper written in C instead of using the extra mod_perl dependency. You still need to have  itself installed so the wrapper can run the BackupPC scripts.
+
+Make sure Apache can run CGI programs (the line loading mod_cgi is not commented) and that it reads the BackupPC configuration by including it in :
+
+## The webserver user and the suid problem
+The current setup of BackupPC, the webserver needs to run as backuppc user and this can be a problem on many setups where the webserver is used for other sites. In the past one could suid a Perl script, but it was blocked globally due security problems several years ago. To workaround that, perl-suid was used, but again blocked due the same problem  more recently, scripts cannot be run securely with suid bit. Still there is another way, this time using a simple binary program that is suid as a launcher, that will run the backuppc Perl scripts already with the correct user. This isolates the Perl script from the environment and it is considered safe.
+
+You need to replace the original backuppc CGI  with the below C code compiled program and move the backuppc CGI to another place.
+
+Move the real CGI  to the lib directory .
+
+Save the C code below to a file named wrapper.c (please update the CGI path if needed) and compile it with:
+
+ $ gcc -o BackupPC_Admin wrapper.c
+
+The wrapper C code:
+
+ #include
+ #define REAL_PATH "/usr/share/backuppc/lib/real-BackupPC_Admin.cgi"
+ int main(ac, av)
+ char **av;
+ {
+    execv(REAL_PATH, av);
+    return 0;
+ }
+
+Place the new binary  in the cgi-bin directory and chown the binary CGI to  and set the suid bit:
+
+ # chown backuppc:http /usr/share/backuppc/cgi-bin/BackupPC_Admin
+ # chmod 4750 /usr/share/backuppc/cgi-bin/BackupPC_Admin
+
+Do not forget to clear the suid bit on the original Perl script if it was set (or the CGI page will not load):
+
+ # chmod 0755 /usr/share/backuppc/lib/real-BackupPC_Admin.cgi
+
+Keep your web server with its usual user and backup should now be able to run correctly.
+
+## Alternative nginx configuration
+Install  and .
+
+Create those two directories :
+ # mkdir /etc/nginx/sites-available
+ # mkdir /etc/nginx/sites-enabled
+
+Edit nginx configuration file to include the configuration files from , by adding this at the end of the http block :
+{{hc|/etc/nginx/nginx.conf|
+http {
+    ...
+    include sites-enabled/*;
+}
+}}
+
+{{hc|/etc/nginx/sites-available/backuppc|
+server {
+    listen ;
+    server_name ;
+
+    root  /usr/share/backuppc/html;
+    index /index.cgi;
+
+    access_log  /var/log/nginx/backuppc.access.log;
+    error_log   /var/log/nginx/backuppc.error.log;
+
+    location / {
+        allow 127.0.0.1/32;
+        # allow 192.168.0.0/24;
+        deny all;
+
+        # auth_basic "Backup";
+        # auth_basic_user_file conf/backuppc.users;
+
+        location /backuppc {
+            alias /usr/share/backuppc/html;
+        }
+
+        location ~ \.cgi$ {
+            include fastcgi_params;
+            fastcgi_pass unix:/run/fcgiwrap.sock;
+
+            fastcgi_param REMOTE_ADDR     $remote_addr;
+            fastcgi_param REMOTE_USER     $remote_user;
+            fastcgi_param SCRIPT_FILENAME /usr/share/backuppc/cgi-bin/BackupPC_Admin;
+        }
+    }
+}
+}}
+
+And symlink to sites-enabled:
+
+ # ln -s /etc/nginx/sites-available/backuppc /etc/nginx/sites-enabled
+
+Edit the executing user in  file to .
+
+Enable/start  and .
+
+If you want to use basic authentication, uncomment the corresponding lines above and create the file  containing all allowed users :
+ # echo -n 'myuser:' >> /etc/nginx/conf/backuppc.users
+ # openssl passwd -apr1 >> /etc/nginx/conf/backuppc.users
+
+Follow Certbot#Nginx to create a Let's Encrypt certificate and configure a TLS certificate.
+
+## Alternative lighttpd configuration
+Install the  package.
+
+And create log file:
+
+ # touch /var/log/lighttpd/error.log
+ # chown backuppc:backuppc /var/log/lighttpd/error.log
+
+For HTTPS support and configuration please check the lighttpd article.
+
+Start start/enable the  and point your browser to .
+
+## lighttpd systemd hardening note (Arch Linux)
+On Arch Linux, the packaged  uses systemd hardening (), which mounts  read-only inside the lighttpd service namespace.
+Since BackupPC’s web interface writes configuration files under , configuration updates via the web UI will fail unless write access is explicitly allowed.
+
+To permit this while keeping systemd hardening enabled, create a systemd override for lighttpd:
+
+Then reload and restart the service:
+
+ # systemctl daemon-reload
+ # systemctl restart lighttpd.service
+
+This ensures the BackupPC service is available before lighttpd starts and allows the web interface to save configuration changes.
+
+## Accessing the admin page
+Before accessing the admin page you have to specify which users/groups will be able to edit BackupPC's configuration.
+
+{{hc|/etc/backuppc/config.pl|
+$Conf{CgiAdminUserGroup} = '';
+$Conf{CgiAdminUsers}     = '';  # <-- set to '*' if the webserver is not autenticating users
+}}
+
+Browse to http://localhost/BackupPC_Admin respectively http://your_backuppc_server_ip/BackupPC_Admin.
+
+## Website view problem
+Due an Apache directive, the web interface may not shown properly. If that is your case, just modify the line in your  that avoids .htaccess and .htpasswd from viewed for clients or change directory name /usr/share/backuppc/html for /usr/share/backuppc/files and update  with the new path, as it follows:

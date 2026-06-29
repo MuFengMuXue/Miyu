@@ -1,0 +1,319 @@
+**Resources**
+
+[[]][Official Support Page](https://support.hp.com/us-en/product/details/hp-pavilion-dv7-1100-entertainment-notebook-pc-series/model/3807256)
+
+[[]][Hardware Maintenance Manual](https://h10032.www1.hp.com/ctg/Manual/c01918142.pdf)
+
+[[]][HP Pavilion](https://en.wikipedia.org/wiki/HP_Pavilion "wikipedia:HP Pavilion")
+
+**Article status**
+
+[[]]This article has some todo items:\
+
+-   [Bluetooth](#Bluetooth)
+-   [Keyboard](#Keyboard)
+-   [Special keys](#Special_keys)
+
+## Contents
+
+-   [[1] [Hardware]](#Hardware)
+    -   [[1.1] [BIOS]](#BIOS)
+    -   [[1.2] [CPU]](#CPU)
+    -   [[1.3] [Graphics]](#Graphics)
+    -   [[1.4] [Ethernet]](#Ethernet)
+    -   [[1.5] [ACPI]](#ACPI)
+    -   [[1.6] [Wireless]](#Wireless)
+    -   [[1.7] [Sound]](#Sound)
+    -   [[1.8] [USB]](#USB)
+    -   [[1.9] [SATA, IDE, PCI]](#SATA.2C_IDE.2C_PCI)
+    -   [[1.10] [Webcam]](#Webcam)
+    -   [[1.11] [Touchpad]](#Touchpad)
+    -   [[1.12] [Bluetooth]](#Bluetooth)
+    -   [[1.13] [Keyboard]](#Keyboard)
+        -   [[1.13.1] [Special keys]](#Special_keys)
+
+## [Hardware]
+
+`root `[`#`]`lspci`
+
+    00:00.0 Host bridge: Advanced Micro Devices [AMD] RS780 Host Bridge
+    00:01.0 PCI bridge: Hewlett-Packard Company Device 9602
+    00:04.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 0)
+    00:05.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 1)
+    00:06.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 2)
+    00:07.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 3)
+    00:0a.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 5)
+    00:11.0 SATA controller: ATI Technologies Inc SB700/SB800 SATA Controller [AHCI mode]
+    00:12.0 USB Controller: ATI Technologies Inc SB700/SB800 USB OHCI0 Controller
+    00:12.1 USB Controller: ATI Technologies Inc SB700 USB OHCI1 Controller
+    00:12.2 USB Controller: ATI Technologies Inc SB700/SB800 USB EHCI Controller
+    00:13.0 USB Controller: ATI Technologies Inc SB700/SB800 USB OHCI0 Controller
+    00:13.1 USB Controller: ATI Technologies Inc SB700 USB OHCI1 Controller
+    00:13.2 USB Controller: ATI Technologies Inc SB700/SB800 USB EHCI Controller
+    00:14.0 SMBus: ATI Technologies Inc SBx00 SMBus Controller (rev 3a)
+    00:14.1 IDE interface: ATI Technologies Inc SB700/SB800 IDE Controller
+    00:14.2 Audio device: ATI Technologies Inc SBx00 Azalia (Intel HDA)
+    00:14.3 ISA bridge: ATI Technologies Inc SB700/SB800 LPC host controller
+    00:14.4 PCI bridge: ATI Technologies Inc SBx00 PCI to PCI Bridge
+    00:18.0 Host bridge: Advanced Micro Devices [AMD] Family 11h Processor HyperTransport Configuration (rev 40)
+    00:18.1 Host bridge: Advanced Micro Devices [AMD] Family 11h Processor Address Map
+    00:18.2 Host bridge: Advanced Micro Devices [AMD] Family 11h Processor DRAM Controller
+    00:18.3 Host bridge: Advanced Micro Devices [AMD] Family 11h Processor Miscellaneous Control
+    00:18.4 Host bridge: Advanced Micro Devices [AMD] Family 11h Processor Link Control
+    01:05.0 VGA compatible controller: ATI Technologies Inc RS780M/RS780MN [Radeon HD 3200 Graphics]
+    01:05.1 Audio device: ATI Technologies Inc RS780 Azalia controller
+    08:00.0 System peripheral: JMicron Technology Corp. SD/MMC Host Controller
+    08:00.2 SD Host controller: JMicron Technology Corp. Standard SD Host Controller
+    08:00.3 System peripheral: JMicron Technology Corp. MS Host Controller
+    08:00.4 System peripheral: JMicron Technology Corp. xD Host Controller
+    09:00.0 Ethernet controller: Atheros Communications Inc. AR5001 Wireless Network Adapter (rev 01)
+    0a:00.0 Ethernet controller: Realtek Semiconductor Co., Ltd. RTL8101E/RTL8102E PCI Express Fast Ethernet controller (rev 02)
+    0b:00.0 Multimedia controller: Broadcom Corporation BCM70012 Video Decoder [Crystal HD] (rev 01)
+
+### [BIOS]
+
+`user `[`$`]`dmidecode`
+
+      Vendor: Hewlett-Packard
+        Version: F.22
+        Release Date: 09/09/2008
+        ROM Size: 1024 kB
+        Characteristics:
+            PCI is supported
+            BIOS is upgradeable
+            BIOS shadowing is allowed
+            Boot from CD is supported
+            Selectable boot is supported
+            BIOS ROM is socketed
+            EDD is supported
+            Japanese floppy for NEC 9800 1.2 MB is supported (int 13h)
+            Japanese floppy for Toshiba 1.2 MB is supported (int 13h)
+            5.25"/360 KB floppy services are supported (int 13h)
+            5.25"/1.2 MB floppy services are supported (int 13h)
+            3.5"/720 KB floppy services are supported (int 13h)
+            3.5"/2.88 MB floppy services are supported (int 13h)
+            8042 keyboard services are supported (int 9h)
+            CGA/mono video services are supported (int 10h)
+            ACPI is supported
+            USB legacy is supported
+            Targeted content distribution is supported
+
+### [CPU]
+
+The CPU is an AMD Turion X2 Dual-Core Mobile RM-70.
+
+`user `[`$`]`cat /proc/cpuinfo`
+
+    processor : 0
+    vendor_id   : AuthenticAMD
+    cpu family  : 17
+    model       : 3
+    model name  : AMD Turion(tm) X2 Dual-Core Mobile RM-70
+    stepping    : 1
+    cpu MHz     : 2000.000
+    cache size  : 512 KB
+    physical id : 0
+    siblings    : 2
+    core id     : 0
+    cpu cores   : 2
+    apicid      : 0
+    initial apicid  : 0
+    fpu     : yes
+    fpu_exception   : yes
+    cpuid level : 1
+    wp      : yes
+    flags       : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt rdtscp lm 3dnowext 3dnow constant_tsc rep_good nonstop_tsc
+                      extd_apicid pni cx16 lahf_lm cmp_legacy svm extapic cr8_legacy 3dnowprefetch osvw skinit
+    bogomips    : 4000.34
+    TLB size    : 1024 4K pages
+    clflush size    : 64
+    cache_alignment : 64
+    address sizes   : 40 bits physical, 48 bits virtual
+    power management: ts ttp tm stc 100mhzsteps hwpstate
+
+    processor   : 1
+    vendor_id   : AuthenticAMD
+    cpu family  : 17
+    model       : 3
+    model name  : AMD Turion(tm) X2 Dual-Core Mobile RM-70
+    stepping    : 1
+    cpu MHz     : 500.000
+    cache size  : 512 KB
+    physical id : 0
+    siblings    : 2
+    core id     : 1
+    cpu cores   : 2
+    apicid      : 1
+    initial apicid  : 1
+    fpu     : yes
+    fpu_exception   : yes
+    cpuid level : 1
+    wp      : yes
+    flags       : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt rdtscp lm 3dnowext 3dnow constant_tsc rep_good nonstop_tsc
+                      extd_apicid pni cx16 lahf_lm cmp_legacy svm extapic cr8_legacy 3dnowprefetch osvw skinit
+    bogomips    : 3990.33
+    TLB size    : 1024 4K pages
+    clflush size    : 64
+    cache_alignment : 64
+    address sizes   : 40 bits physical, 48 bits virtual
+    power management: ts ttp tm stc 100mhzsteps hwpstate
+
+`user `[`$`]`lscpu`
+
+    Architecture:          x86_64
+    CPU op-mode(s):        64-bit
+    CPU(s):                2
+    Thread(s) per core:    1
+    Core(s) per socket:    2
+    CPU socket(s):         1
+    NUMA node(s):          1
+    Vendor ID:             AuthenticAMD
+    CPU family:            17
+    Model:                 3
+    Stepping:              1
+    CPU MHz:               500.000
+    Virtualization:        AMD-V
+    L1d cache:             64K
+    L1i cache:             64K
+    L2 cache:              512K
+
+### [Graphics]
+
+The GPU is Radeon HD 3200 (see [this link](https://en.wikipedia.org/wiki/Comparison_of_AMD_graphics_processing_units#Mobility_Radeon_HD_3xxx_Series "wikipedia:Comparison of AMD graphics processing units") for further informations). Follow the instructions in the [Radeon article](https://wiki.gentoo.org/wiki/Radeon "Radeon").
+
+`root `[`#`]`lspci -k -s 01:05.0`
+
+    01:05.0 VGA compatible controller: ATI Technologies Inc RS780M/RS780MN [Radeon HD 3200 Graphics]
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: fglrx_pci
+
+### [Ethernet]
+
+`root `[`#`]`lspci -k -s 0a:00.0`
+
+    0a:00.0 Ethernet controller: Realtek Semiconductor Co., Ltd. RTL8101E/RTL8102E PCI Express Fast Ethernet controller (rev 02)
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: r8169
+
+### [ACPI]
+
+`root `[`#`]`lspci -k -s 00:18.3`
+
+    00:18.3 Host bridge: Advanced Micro Devices [AMD] Device 1703
+        Kernel driver in use: k10temp
+        Kernel modules: k10temp
+
+### [Wireless]
+
+`root `[`#`]`lspci -k -s 09:00.0`
+
+    09:00.0 Ethernet controller: Atheros Communications Inc. AR5001 Wireless Network Adapter (rev 01)
+        Subsystem: Hewlett-Packard Company Device 137a
+        Kernel driver in use: ath5k
+
+### [Sound]
+
+`root `[`#`]`lspci -k -s 01:05.1`
+
+    01:05.1 Audio device: ATI Technologies Inc RS780 Azalia controller
+        Subsystem: ATI Technologies Inc RS780 Azalia controller
+        Kernel driver in use: HDA Intel
+
+### [USB]
+
+`root `[`#`]`lspci -k -s 00:12.0`
+
+    00:12.0 USB Controller: ATI Technologies Inc SB700/SB800 USB OHCI0 Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ohci_hcd
+
+`root `[`#`]`lspci -k -s 00:12.1`
+
+    00:12.1 USB Controller: ATI Technologies Inc SB700 USB OHCI1 Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ohci_hcd
+
+`root `[`#`]`lspci -k -s 00:12.2`
+
+    00:12.2 USB Controller: ATI Technologies Inc SB700/SB800 USB EHCI Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ehci_hcd
+
+`root `[`#`]`lspci -k -s 00:13.0`
+
+    00:13.0 USB Controller: ATI Technologies Inc SB700/SB800 USB OHCI0 Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ohci_hcd
+
+`root `[`#`]`lspci -k -s 00:13.1`
+
+    00:13.1 USB Controller: ATI Technologies Inc SB700 USB OHCI1 Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ohci_hcd
+
+`root `[`#`]`lspci -k -s 00:13.2`
+
+    00:13.2 USB Controller: ATI Technologies Inc SB700/SB800 USB EHCI Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ehci_hcd
+
+### [][SATA, IDE, PCI]
+
+`root `[`#`]`lspci -k -s 00:11.0`
+
+    00:11.0 SATA controller: ATI Technologies Inc SB700/SB800 SATA Controller [AHCI mode]
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: ahci
+
+`root `[`#`]`lspci -k -s 00:14.0`
+
+    00:14.0 SMBus: ATI Technologies Inc SBx00 SMBus Controller (rev 3a)
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: piix4_smbus
+
+`root `[`#`]`lspci -k -s 00:14.1`
+
+    00:14.1 IDE interface: ATI Technologies Inc SB700/SB800 IDE Controller
+        Subsystem: Hewlett-Packard Company Device 30fc
+        Kernel driver in use: pata_atiixp
+
+`root `[`#`]`lspci -k -s 00:04.0`
+
+    00:04.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 0)
+        Kernel driver in use: pcieport
+
+`root `[`#`]`lspci -k -s 00:05.0`
+
+    00:05.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 1)
+        Kernel driver in use: pcieport
+
+`root `[`#`]`lspci -k -s 00:06.0`
+
+    00:06.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 2)
+        Kernel driver in use: pcieport
+
+`root `[`#`]`lspci -k -s 00:07.0`
+
+    00:07.0 PCI bridge: Advanced Micro Devices [AMD] RS780 PCI to PCI bridge (PCIE port 3)
+        Kernel driver in use: pcieport
+
+### [Webcam]
+
+`user `[`$`]`dmesg | grep Webcam`
+
+    usb 1-6: Product: HP Webcam
+    uvcvideo: Found UVC 1.00 device HP Webcam  (046d:09b8)
+    HP Webcam  as /devices/pci0000:00/0000:00:12.2/usb1/1-6/1-6:1.0/input/input8
+
+### [Touchpad]
+
+`user `[`$`]`dmesg | grep Touchpad`
+
+    Synaptics Touchpad, model: 1, fw: 7.2, id: 0x1a0b1, caps: 0xd04751/0xa00000/0x20000
+    input: SynPS/2 Synaptics TouchPad as /devices/platform/i8042/serio1/input/input12
+
+### [Bluetooth]
+
+### [Keyboard]
+
+#### [Special keys]

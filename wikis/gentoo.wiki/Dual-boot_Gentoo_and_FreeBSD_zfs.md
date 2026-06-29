@@ -1,0 +1,119 @@
+[] The information in this article is probably **outdated**. You can help the Gentoo community by verifying and [updating this article](https://wiki.gentoo.org/index.php?title=Dual-boot_Gentoo_and_FreeBSD_zfs&action=edit).
+
+This article suppose that you have Gentoo installed on zfs already.
+
+**Also consider this how-to as highly experimental and check all the commands that you know what are you doing.**
+
+## Contents
+
+-   [[1] [Requirements (starting point)]](#Requirements_.28starting_point.29)
+-   [[2] [Create ZFS datasets]](#Create_ZFS_datasets)
+-   [[3] [Unpack FreeBSD tarballs]](#Unpack_FreeBSD_tarballs)
+-   [[4] [Prepare boot directory]](#Prepare_boot_directory)
+-   [[5] [Setup FreeBSD files]](#Setup_FreeBSD_files)
+-   [[6] [Setup grub]](#Setup_grub)
+-   [[7] [Finish]](#Finish)
+-   [[8] [References]](#References)
+
+## [][Requirements (starting point)]
+
+-   Boot partition on ext2 (min 500MB).
+-   grub:0 or grub:2 installed on boot
+
+Update your zfs layout to something like this:
+
+    rpool                          47,1G  10,9G   160K  /rpool
+    rpool/GENTOO                   15,6G  10,9G   168K  /rpool/GENTOO
+    rpool/GENTOO/distfiles         4,49G  10,9G  4,49G  /rpool/GENTOO/distfiles
+    rpool/GENTOO/opt               1,93G  10,9G   984M  /rpool/GENTOO/opt
+    rpool/GENTOO/portage           1,40G  10,9G   897M  /rpool/GENTOO/portage
+    rpool/GENTOO/root              7,79G  10,9G  4,67G  legacy
+
+It is needed to create layout that will not colide on both systems.
+
+Boot partition looks like this:
+
+`root `[`#`]`ll /bootdir`
+
+    total 33668
+    -rw-r--r--  1 root  wheel  2476465 Oct 30 00:02 System.map-3.10.7-gentoo-r1
+    -rw-r--r--  1 root  wheel    91809 Oct 30 00:02 config-3.10.7-gentoo-r1
+    drwxr-xr-x  2 root  wheel     1024 Nov 27 22:27 grub/
+    -rw-r--r--  1 root  wheel  2950360 Nov 27 17:57 initramfs.xz
+    drwx------  2 root  wheel    12288 Apr 30  2011 lost+found/
+    -rw-r--r--  1 root  wheel  3403920 Oct 30 00:02 vmlinuz-3.10.7-gentoo-r1
+
+## [Create ZFS datasets]
+
+First we need to create zfs layout for freebsd:
+
+    zfs create rpool/FREEBSD
+    zfs create rpool/FREEBSD/ports
+    zfs create rpool/FREEBSD/ports/distfiles
+    zfs create rpool/FREEBSD/ports/packages
+    zfs create rpool/FREEBSD/root
+
+Set some optional variables:
+
+    zfs set atime=off rpool/FREEBSD
+    zfs set compression=lz4
+    zfs set compression=off rpool/FREEBSD/ports/distfiles
+    zfs set compression=off rpool/FREEBSD/ports/packages
+
+## [Unpack FreeBSD tarballs]
+
+    cd /rpool/FREEBSD/
+    wget ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/9.2-RELEASE/base.txz
+    wget ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/9.2-RELEASE/kernel.txz
+    wget ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/9.2-RELEASE/ports.txz
+
+    cd root
+    xzcat ../base.txz | tar -xv
+    xzcat ../kernel.txz | tar -xv
+    ln -s /rpool/FREEBSD/ports usr/ports
+    xzcat ../ports.txz | tar -xv
+
+## [Prepare boot directory]
+
+Copy boot contents to boot partition.
+
+     mkdir /boot/boot
+     cd /rpool/FREEBSD/root
+     mv boot/* /boot/boot/
+     mv boot bootdir
+     ln -s bootdir/boot boot
+
+Set new boot parition in new FreeBSD fstab.
+
+     echo '/dev/ada0s1 /bootdir ext2fs rw 0 1' > etc/fstab
+
+## [Setup FreeBSD files]
+
+These settings are needed to make FreeBSD boot. For other options check freebsd handbook.
+
+    echo 'zfs_load="YES"' > /boot/boot/loader.conf
+    echo 'vfs.root.mountfrom="zfs:rpool/FREEBSD/root"' >> /boot/boot/loader.conf
+    echo 'ext2fs_load="YES"' >> /boot/boot/loader.conf
+
+Set some variables to rc.conf
+
+    echo 'hostname="xxx"' > etc/rc.conf
+
+## [Setup grub]
+
+Since I use grub-legacy, this apply to it. But not much different in grub-2.
+
+Set menu entry in grub:
+
+    title FreeBSD
+    root (hd0,0)
+    kernel /boot/loader
+
+## [Finish]
+
+Now if everything will goes well, you can reboot to new FreeBSD installation. For other setups consult freebsd handbook/wiki/forums.
+
+## [References]
+
+-   [https://wiki.freebsd.org/RootOnZFS/UFSBoot](https://wiki.freebsd.org/RootOnZFS/UFSBoot)
+-   [http://www.freebsd.org/doc/handbook](http://www.freebsd.org/doc/handbook)

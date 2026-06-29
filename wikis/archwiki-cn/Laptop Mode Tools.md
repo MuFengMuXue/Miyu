@@ -1,0 +1,276 @@
+相关文章
+
+  * [acpid](<../zh-cn/Acpid.html> "Acpid")
+  * [systemd](<../zh-cn/Systemd.html> "Systemd")
+  * [cpufrequtils](<../zh-cn/CPU_%E8%B0%83%E9%A2%91.html> "Cpufrequtils")
+  * [Laptop](<../zh-cn/%E7%AC%94%E8%AE%B0%E6%9C%AC%E7%94%B5%E8%84%91.html> "Laptop")
+  * [Powertop](<../zh-cn/Powertop.html> "Powertop")
+  * [TLP](<../zh-cn/TLP.html> "TLP")
+
+**翻译状态：**
+
+  * 本文（或部分内容）译自 [Laptop Mode Tools](<https://wiki.archlinux.org/title/Laptop_Mode_Tools> "arch:Laptop Mode Tools")，最近一次同步于 2023-01-30，若英文版本有所[更改](<https://wiki.archlinux.org/title/Laptop_Mode_Tools?diff=0&oldid=765325>)，则您可以帮助同步与[翻译](<../zh-cn/Help:%E7%BF%BB%E8%AF%91.html> "Help:翻译")更改的内容。
+  * 您可以在 [ArchWiki 的对应页面](<https://wiki.archlinux.org/title/Laptop_Mode_Tools_\(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87\)?action=history>)找到本文翻译的**原始** 修订历史。
+  * 本文可能与英文原文存在出入。
+
+[Laptop Mode Tools](<https://github.com/rickysarraf/laptop-mode-tools>) 是一个 Linux 系统下的笔记本电源管理软件。它是让内核开启笔记本电脑模式功能的主要方法，能让硬盘降速。另外，它允许你通过一个简单的配置文件调整一些其他的节能相关的设置。 
+
+与 [acpid](<../zh-cn/Acpid.html> "Acpid") 和 [CPU frequency scaling](<../zh-cn/CPU_frequency_scaling.html> "CPU frequency scaling") 结合使用，LMT 提供给了大多数用户一个完整的笔记本电脑电源管理方案。 
+
+##  安装
+
+请[安装](<../zh-cn/Help:%E9%98%85%E8%AF%BB.html#%E5%AE%89%E8%A3%85%E8%BD%AF%E4%BB%B6%E5%8C%85> "安装") [laptop-mode-tools](<https://aur.archlinux.org/packages/laptop-mode-tools/>)AUR 或 [laptop-mode-tools-git](<https://aur.archlinux.org/packages/laptop-mode-tools-git/>)AUR。 
+
+##  配置
+
+配置是通过下列文件来控制的: 
+
+  * `/etc/laptop-mode/laptop-mode.conf` \- 主要配置文件
+  * `/etc/laptop-mode/conf.d/*` \- 许多特定功能的模块.
+
+每个模块都可以通过修改对应的`conf.d/*`文件中的`CONTROL_*`的值控制 （`enabled` 启用, `disabled` 禁用, `auto` 自动）。 
+
+如果在 `/etc/laptop-mode/laptop-mode.conf` 中设置了 `ENABLE_AUTO_MODULES`，LMT会自动启用那些`CONTROL_*`设为`auto`的模块。 
+
+要查看模块的状态，使用下面命令： 
+    
+    $ grep -r '^\(CONTROL\|ENABLE\)_' /etc/laptop-mode/conf.d
+    
+最后[启用](<../zh-cn/Help:%E9%98%85%E8%AF%BB.html#%E6%8E%A7%E5%88%B6_systemd_%E5%8D%95%E5%85%83> "启用") `laptop-mode.service`。 
+
+###  硬盘
+
+为了使用该功能您需要安装 _hdparm_ 或者 _sdparm_ 。 查看 [Hdparm](<../zh-cn/Hdparm.html> "Hdparm"). 
+
+通过 `hdparm -S` 命令来降低硬盘转速可以让计算机更省电同时更安静. 即是您正在使用电脑您依然可以使用磁盘预读功能让硬盘经常降低转速。LMT（笔记本电脑工具包）也可以使用`hdparm -B` 命令。硬盘省电级别最高（最省电）为1,最低是254,使用交流电源供电时默认为254,使用电池供电时默认为1。如果你觉得硬盘减速使得一些操作变慢的话，把它设置为一个高一点的值（比如128）是个好主意，这会让它不会太频繁的减速。 `hdparm -S` 和 `hdparm -B` 命令的一些参数设置在 `/etc/laptop-mode/laptop-mode.conf`文件中。 
+
+**警告：** 频繁降速提速会降低硬盘寿命，请不要设置的太激进。
+
+如果 `CONTROL_MOUNT_OPTIONS` 选项为 on (默认即为 on), laptop-mode-tools 会自动重新挂载分区, 并在挂载选项中增加了 'commit=600,noatime'。这会让磁盘日志程序jbd2每10分钟才更新一次磁盘日志，而通常情况下几秒钟就会更新一次 (注意：使用该设置你可能会丢掉前10分钟的工作成果（当系统意外关闭时）). 同时请确保不要使用 `atime` 的挂载参数, 使用 `noatime` 或 `relatime` 来替代。 
+
+**注意：**`CONTROL_MOUNT_OPTIONS` 的值不应该在nilfs2分区上被设置为 on (原因可查看 <https://bbs.archlinux.org/viewtopic.php?id=134656>) (也可以查看 <https://www.ibm.com/developerworks/cn/linux/l-cn-nilfs2/index.html> 对nilfs2文件系统的中文介绍)
+
+####  固态硬盘
+
+来自[官方上游 FAQ](<http://samwel.tk/laptop_mode/faq>): 
+
+**问题:** 我电脑里装了一个固态硬盘，那么那些硬盘相关的配置还有效吗？ 
+
+**回答:** 它们有可能有效，原因有两个：1）laptop mode 会减少写次数，从而延长SSD的寿命；2）laptop mode 会让写操作变成突发形式，从而会使一些节电机制（例如ALPM）更好地介入。然而，效果可能会因硬件不同而有差别。有些硬件可能完全没效果，有些则效果显著。 
+
+###  CPU 频率调节
+
+使用该功能你需要安装调节CPU频率的驱动模块。 查看 [CPU frequency scaling](<../zh-cn/CPU_frequency_scaling.html> "CPU frequency scaling"). 
+    
+    # cpufreq.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    CONTROL_CPU_FREQUENCY=1
+    BATT_CPU_MAXFREQ=fastest
+    BATT_CPU_MINFREQ=slowest
+    BATT_CPU_GOVERNOR=ondemand
+    BATT_CPU_IGNORE_NICE_LOAD=1
+    LM_AC_CPU_MAXFREQ=fastest
+    LM_AC_CPU_MINFREQ=slowest
+    LM_AC_CPU_GOVERNOR=ondemand
+    LM_AC_CPU_IGNORE_NICE_LOAD=1
+    NOLM_AC_CPU_MAXFREQ=fastest
+    NOLM_AC_CPU_MINFREQ=slowest
+    NOLM_AC_CPU_GOVERNOR=ondemand
+    NOLM_AC_CPU_IGNORE_NICE_LOAD=0
+    CONTROL_CPU_THROTTLING=0
+    
+###  设备和总线
+
+#### Intel SATA
+
+  * 开启Intel SATA AHCI控制器的ALPM特性使磁盘空闲时让磁盘工作在非常低的功耗模式。
+
+    # intel-sata-powermgmt.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_INTEL_SATA_POWER=1
+    BATT_ACTIVATE_SATA_POWER=1
+    LM_AC_ACTIVATE_SATA_POWER=1
+    NOLM_AC_ACTIVATE_SATA_POWER=0
+    
+**注意：** 更多详细配置信息请参阅 `/etc/laptop-mode/conf.d/intel-sata-powermgmt.conf` 文件。
+
+####  USB 自动休眠
+
+USB 自动休眠功能从 _usb-autosuspend_ 移动到了 _runtime-pm_ ，请在 /lib/udev/rules.d/99-laptop-mode.rules 中将 usb-autosuspend 替换为 runtime-pm. 
+    
+    # runtime-pm.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_RUNTIME_AUTOSUSPEND=1
+    BATT_SUSPEND_RUNTIME=1
+    LM_AC_SUSPEND_RUNTIME=1
+    NOLM_AC_SUSPEND_RUNTIME=1
+    AUTOSUSPEND_TIMEOUT=2
+    
+**注意：** 更多详细配置信息请参阅 `/etc/laptop-mode/conf.d/runtime-pm.conf` 文件。如果你有一个经常使用的USB设备（比如USB鼠标），把它们禁用可以防止它们自动休眠。
+
+###  显示和图形
+
+####  LCD 显示器亮度
+
+  * 可以通过以下命令来查看可用的笔记本电脑屏幕亮度数值:
+
+    $ cat /proc/acpi/video/VID/LCD/brightness
+    
+#####  ThinkPad T40/T42
+
+对于 [ThinkPad](<https://en.wikipedia.org/wiki/ThinkPad> "wikipedia:ThinkPad") T40/T42 笔记本，最小和最大亮度的查看要通过以下命令: 
+    
+    $ cat /sys/class/backlight/acpi_video0/brightness
+    $ cat /sys/class/backlight/acpi_video0/max_brightness
+    
+    # lcd-brightness.conf
+    # ThinkPad T40/T42 Example
+    #
+    DEBUG=0
+    CONTROL_BRIGHTNESS=1
+    BATT_BRIGHTNESS_COMMAND="echo 0"
+    LM_AC_BRIGHTNESS_COMMAND="echo 7"
+    NOLM_AC_BRIGHTNESS_COMMAND="echo 7"
+    BRIGHTNESS_OUTPUT="/sys/class/backlight/thinkpad_screen/brightness"
+    
+##### ThinkPad T60
+
+  * 对于 [ThinkPad](<https://en.wikipedia.org/wiki/ThinkPad> "wikipedia:ThinkPad") T60 笔记本，最小和最大亮度的查看要通过以下命令:
+
+    $ cat /sys/class/backlight/thinkpad_screen/max_brightness
+    $ cat /sys/class/backlight/thinkpad_screen/brightness
+    
+    # lcd-brightness.conf
+    # ThinkPad T60 Example
+    #
+    DEBUG=0
+    CONTROL_BRIGHTNESS=1
+    BATT_BRIGHTNESS_COMMAND="echo 0"
+    LM_AC_BRIGHTNESS_COMMAND="echo 7"
+    NOLM_AC_BRIGHTNESS_COMMAND="echo 7"
+    BRIGHTNESS_OUTPUT="/sys/class/backlight/acpi_video0/brightness"
+    
+**注意：** 更多配置细节请阅读 `/etc/laptop-mode/conf.d/lcd-brightness.conf` 文件。
+
+####  终端黑屏时间
+    
+    # terminal-blanking.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_TERMINAL=1
+    TERMINALS="/dev/tty1"
+    BATT_TERMINAL_BLANK_MINUTES=1
+    BATT_TERMINAL_POWERDOWN_MINUTES=2
+    LM_AC_TERMINAL_BLANK_MINUTES=10
+    LM_AC_TERMINAL_POWERDOWN_MINUTES=10
+    NOLM_AC_TERMINAL_BLANK_MINUTES=10
+    NOLM_AC_TERMINAL_POWERDOWN_MINUTES=10
+    
+**注意：** 更多配置细节请参阅 `/etc/laptop-mode/conf.d/terminal-blanking.conf` 文件。
+
+###  网络
+
+####  以太网
+    
+    # ethernet.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_ETHERNET=1
+    LM_AC_THROTTLE_ETHERNET=0
+    NOLM_AC_THROTTLE_ETHERNET=0
+    DISABLE_WAKEUP_ON_LAN=1
+    DISABLE_ETHERNET_ON_BATTERY=1
+    ETHERNET_DEVICES="eth0"
+    
+####  无线局域网
+
+无线网络设备的电源管理是设备相关的，因此配置时更需要一些技巧。依赖于无线芯片，设置通过下面三个文件中的一个来管理： 
+
+  1. `/etc/laptop-mode/conf.d/wireless-power.conf` 用于的电源管理的通用方法 (通过 "iwconfig wlan0 power on/off"). 这个适用于大多数芯片（除了Intel芯片集之外）。
+  2. `/etc/laptop-mode/conf.d/wireless-ipw-power.conf` 通过老的ipw驱动来管理 Intel 芯片集。这适用于 IPW3945、IPW2200 和 IPW2100. 现在（到LMT 1.55-1为止）它用 iwpriv 来管理 IPW3945，以及用 iwconfig 结合 iwpriv来管理 IPW2100 和 IPW220。详细信息请参见 `/usr/share/laptop-mode-tools/modules/wireless-ipw-power` 文件。（注意，ipw3945模块已经废弃了，见下面）
+  3. `/etc/laptop-mode/conf.d/wireless-iwl-power.conf` 用于管理 iwl4965、iwl3945 和 iwlagn 驱动的Intel芯片集（iwlagn 支持 4965, 5100, 5300, 5350, 5150, 1000, 和 6000 芯片集）
+
+**注意：** 三个模块全开通常不会带来问题，因为LMT会自动检测设备对应的模块。
+
+每个配置文件所支持的模块是直接源自LMT的。但是有些已经过时了，因为从Linux内核版本2.6.34开始就不再提供ipw3945和iwl4965模块（3945采用iwl3945，4965采用通用模块iwlagn）。这并不影响LMT的正常工作。 
+
+对于iwlagn驱动的一些芯片集（包括5300或其它），有一个已知的问题。在这些芯片集上，文件 `/etc/laptop-mode/conf.d/wireless-iwl-power.conf`中的下列配置： 
+    
+    IWL_AC_POWER
+    IWL_BATT_POWER
+    
+会被忽略，因为文件 `/sys/class/net/wlan*/device/power_level` 不存在。于是通用方法（通过 "iwconfig wlan0 power on/off" ）会被自动启用。 
+
+###  音频设备
+
+#### AC97
+    
+    # ac97-powersave.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_AC97_POWER=1
+    
+#### Intel HDA
+    
+    # intel-hda-powersave.conf
+    # ThinkPad T40/T42/T60 Example
+    #
+    DEBUG=0
+    CONTROL_INTEL_HDA_POWER=1
+    BATT_INTEL_HDA_POWERSAVE=1
+    LM_AC_INTEL_HDA_POWERSAVE=1
+    NOLM_AC_INTEL_HDA_POWERSAVE=0
+    INTEL_HDA_DEVICE_TIMEOUT=10
+    INTEL_HDA_DEVICE_CONTROLLER=0
+    
+##  疑难问题
+
+###  Laptop-mode-tools 不能收到事件
+
+对于使用 [systemd](</wzh/index.php?title=Systemd_\(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87\)&action=edit&redlink=1> "Systemd \(简体中文\)（页面不存在）") 的系统，开启并使其开机自动加载[acpid](<../zh-cn/Acpid_\(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87\).html> "Acpid \(简体中文\)") 请运行以下命令: 
+    
+    # systemctl enable acpid
+    # systemctl start acpid
+    
+如果这样不管用的话，请仔细检查一边 laptop-mode 的配置文件并确定需要开启的服务被设置成 1 了。许多服务，包括cpu频率控制服务 (cpufreq control) 默认设置都是'自动'("auto")，所以可能没有开启。 
+
+### USB Mouse sleeping after 5 seconds when on battery
+
+First find the ID of you device (it should look like `046d:c534`): 
+    
+    $ lsusb
+    
+Put this value into the `AUTOSUSPEND_DEVID_BLACKLIST` variable in `/etc/laptop-mode/conf.d/runtime-pm.conf`, for example: 
+    
+    /etc/laptop-mode/conf.d/runtime-pm.conf
+    
+    ...
+    AUTOSUSPEND_DEVID_BLACKLIST="046d:c534"
+    ...
+
+Multiple IDs can be seperated with spaces. 
+
+**注意：** Do not forget to [restart](<../zh-cn/Help:%E9%98%85%E8%AF%BB.html#%E6%8E%A7%E5%88%B6_systemd_%E5%8D%95%E5%85%83> "Restart") `laptop-mode.service`. You might also need to reconnect the USB device.
+
+### Issues with NVIDIA driver
+
+#### KDE shows black screen
+
+When laptop mode is enabled, KDE fails to start. The reason is that the default KDE display manager (SDDM) starts before the NVIDIA driver. To prevent this from happening you need to remove the `nomodeset` [kernel parameter](<../zh-cn/Kernel_parameter.html> "Kernel parameter"). 
+
+#### Slower Boot after enabling laptop-mode.service
+
+As described before, laptop-mode-tools affects the NVIDIA driver. Adding the `nvidia-drm.modeset=1` [kernel parameter](<../zh-cn/Kernel_parameter.html> "Kernel parameter") reduces boot time dramatically. 
+
+##  相关链接
+
+  * [Laptop Mode Tools](<http://samwel.tk/laptop_mode/>)
+  * [Mailing List Archives](<https://web.archive.org/web/20160406100358/http://mailman.samwel.tk/pipermail/laptop-mode/>)

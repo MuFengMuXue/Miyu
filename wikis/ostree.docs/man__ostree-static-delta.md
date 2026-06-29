@@ -1,0 +1,95 @@
+## Name
+
+ostree-static-delta — Manage static delta files
+
+## Synopsis
+
+`ostree static-delta list`
+
+`ostree static-delta show`
+
+`ostree static-delta delete`
+
+`ostree static-delta generate` {--to=REV} \[OPTIONS...\]
+
+`ostree static-delta apply-offline` \[OPTIONS...\] {PATH} \[KEY-ID...\]
+
+`ostree static-delta verify` \[OPTIONS...\] {STATIC-DELTA} \[KEY-ID...\]
+
+## Description
+
+List and manipulate static delta files.
+
+## 'Generate' Options
+
+`--from`="REV"  
+Create delta from revision REV.
+
+`--to`="REV"  
+Create delta to revision REV. (This option is required.) The delta is from the parent of REV, unless specified otherwise by `--from` or `--empty`.
+
+`--empty`  
+Create delta from scratch.
+
+`--max-usize`=SIZE  
+Maximum uncompressed size in megabytes.
+
+`--sign-type`=ENGINE  
+Use particular signature engine. Currently available ed25519 and dummy signature types. The default is ed25519 .
+
+`--sign`="KEY-ID"  
+There `KEY-ID` is:
+
+`for ed25519:`  
+`base64`-encoded secret key for signing.
+
+`for dummy:`  
+ASCII-string used as secret key.
+
+## 'Apply-offline' Options
+
+`KEY-ID`  
+`for ed25519:`  
+`base64`-encoded public key for verifying.
+
+`for dummy:`  
+ASCII-string used as public key.
+
+`--sign-type`=ENGINE  
+Use particular signature engine. Currently available ed25519 and dummy signature types.
+
+`--keys-file`  
+Read key(s) from file `filename`.
+
+Valid for `ed25519` signature type. For `ed25519` this file must contain `base64`-encoded public key(s) per line for verifying.
+
+`--keys-dir`  
+Redefine the system path, where to search files and subdirectories with well-known and revoked keys.
+
+## 'Verify' Options
+
+`KEY-ID`  
+`for ed25519:`  
+`base64`-encoded public key for verifying.
+
+`for dummy:`  
+ASCII-string used as public key.
+
+`--sign-type`=ENGINE  
+Use particular signature engine. Currently available ed25519 and dummy signature types. The default is ed25519 .
+
+`--keys-file`  
+Read key(s) from file `filename`.
+
+Valid for `ed25519` signature type. For `ed25519` this file must contain `base64`-encoded public key(s) per line for verifying.
+
+`--keys-dir`  
+Redefine the system path, where to search files and subdirectories with well-known and revoked keys.
+
+## Example
+
+**\$ ostree static-delta**
+
+``` programlisting
+        (No static deltas)
+```

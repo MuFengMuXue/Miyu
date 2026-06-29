@@ -1,0 +1,80 @@
+## Name
+
+ostree-checkout — Check out a commit into a filesystem
+
+## Synopsis
+
+`ostree checkout` \[OPTIONS...\] {COMMIT} \[DESTINATION\]
+
+## Description
+
+Checks out the given commit into the filesystem under directory DESTINATION. If DESTINATION is not specified, the COMMIT will become the destination checkout target. If COMMIT destination already exists, command will error unless `--union` option is selected.
+
+## Options
+
+`--user-mode`, `-U`  
+Do not change file ownership or initialize extended attributes.
+
+`--subpath`="PATH"  
+Checkout sub-directory PATH.
+
+`--union`  
+Keep existing directories and unchanged files, overwrite existing files.
+
+`--union-add`  
+Keep existing directories and files.
+
+`--union-identical`  
+Like `--union`, but error out if a file would be replaced with a different file. Add new files and directories, ignore identical files, and keep existing directories. Requires `-H`.
+
+`--whiteouts`  
+Process whiteout files (Docker style).
+
+`--process-passthrough-whiteouts`  
+Enable overlayfs whiteout extraction into 0:0 character devices. Overlayfs whiteouts are encoded inside ostree as `.ostree-wh.filename` and extracted as 0:0 character devices. This is useful to carry container storage embedded into ostree.
+
+`--allow-noent`  
+Do nothing if specified path does not exist.
+
+`--from-stdin`  
+Process many checkouts from standard input.
+
+`--from-file`="FILE"  
+Process many checkouts from input file.
+
+`--fsync`="POLICY"  
+POLICY is a boolean which specifies whether fsync should be used or not. Default to true.
+
+`--require-hardlinks`, `-H`  
+Do not fall back to full copies if hardlinking fails.
+
+`--force-copy-zerosized`, `-z`  
+This option does nothing; the functionality is now always on by default.
+
+`--force-copy`, `-C`  
+Never hardlink (but may reflink if available).
+
+`--bareuseronly-dirs`, `-M`  
+Suppress mode bits outside of 0775 for directories (suid, world writable, etc.).
+
+`--skip-list`="FILE"  
+Skip checking out the absolute file paths listed in FILE, one per line.
+
+`--selinux-policy`  
+Set SELinux labels based on policy in root filesystem PATH (may be /). This implies `--force-copy`.
+
+`--composefs`  
+Only generate a composefs, not a directory.
+
+`--composefs-noverity`  
+Only generate a composefs, not a directory; fsverity digests will not be included. This is best used for "opportunistic" use of composefs.
+
+## Example
+
+**\$ ostree checkout my-branch**
+
+**\$ ls**
+
+``` programlisting
+        file1����file2����my-branch
+```

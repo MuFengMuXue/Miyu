@@ -1,0 +1,35 @@
+## Name
+
+ostree-config — Change configuration settings
+
+## Synopsis
+
+`ostree config get` {GROUPNAME.KEYNAME}
+
+`ostree config get` { --group=GROUPNAME} { KEYNAME}
+
+`ostree config set` {GROUPNAME.KEYNAME} {VALUE}
+
+`ostree config set` { --group=GROUPNAME} { KEYNAME} {VALUE}
+
+`ostree config unset` {GROUPNAME.KEYNAME}
+
+`ostree config unset` { --group=GROUPNAME} { KEYNAME}
+
+## Description
+
+- **ostree config get** displays the value of KEYNAME in the group GROUPNAME
+
+- **ostree config set** sets the value of KEYNAME in the group GROUPNAME to VALUE .
+
+- **ostree config unset** removes the key KEYNAME from the group GROUPNAME so that OSTree uses the default value for it. It is not an error for the specified GROUPNAME or KEYNAME not to exist.
+
+## Example
+
+**\$ ostree config get core.mode**
+
+bare
+
+**\$ ostree config set --group='remote "myremote"' url http://example.com/repo**
+
+**\$ ostree config unset core.lock-timeout-secs**

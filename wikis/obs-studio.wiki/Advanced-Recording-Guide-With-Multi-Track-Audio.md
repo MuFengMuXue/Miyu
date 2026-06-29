@@ -1,0 +1,1 @@
+This page has moved to https://obsproject.com/kb/multiple-audio-track-recording-guide and https://obsproject.com/kb/standard-recording-output-guide.

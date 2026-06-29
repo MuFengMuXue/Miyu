@@ -1,0 +1,1 @@
+Moderator, please delete this page. The article was written here instead: [https://forum.manjaro.org/t/howto-python-upgrade-reinstall-aur-and-pip-packages/141579](https://forum.manjaro.org/t/howto-python-upgrade-reinstall-aur-and-pip-packages/141579)

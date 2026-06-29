@@ -1,0 +1,394 @@
+This page contains [[changes](https://wiki.gentoo.org/index.php?title=Crossdev_qemu-static-user-chroot&diff=1300179)] which are not marked for translation.
+
+\
+
+** Warning**\
+The process described in here is deprecated and in parts **harmfully incorrect**. Please consider the [Embedded Handbook\'s entry](https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Compiling_with_qemu_user_chroot "Embedded Handbook/General/Compiling with qemu user chroot") instead.
+
+**[] Deprecated article**\
+\
+
+This article is **deprecated (obsolete)**. Contents are [no longer relevant], and are intended for historical reference only!
+
+\
+TLDR: **Do not use this article!**
+
+This page started as a clone of [Cross Container Support Project](https://wiki.gentoo.org/wiki/Cross_Container_Support_Project "Cross Container Support Project") by [User:Jing huang](https://wiki.gentoo.org/wiki/User:Jing_huang "User:Jing huang"), so I wouldn\'t have to play with formatting so much..I merely edited and updated it to match my experiences.
+
+I suddenly found myself with a handfull of omap4430 devices (samsung galaxy tab2, nexus4, etc) and wish to experement with a full glibc userland, and eventually a custom hybrid bionic/glibc userland running a full linux and glx xserver likely running plasma active or some such.
+
+I have been a gentoo user for almost 10 years, but I have little experience cross compiling beyond distcc for a x86 host so I will document the progress of my project here, so that I can remember later.. please excuse my blatant plagerism from all the sites I read as reference while I concocted a solution that worked. while I hope that this guide will prove useful, [ymmv](http://www.urbandictionary.com/define.php?term=YMMV).
+
+## Contents
+
+-   [[1] [My hardware]](#My_hardware)
+-   [[2] [Isn\'t a chroot good enough?]](#Isn.27t_a_chroot_good_enough.3F)
+    -   [[2.1] [Setting the required kernel options]](#Setting_the_required_kernel_options)
+    -   [[2.2] [install static qemu-user]](#install_static_qemu-user)
+        -   [[2.2.1] [Binfmt_misc Configuration]](#Binfmt_misc_Configuration)
+    -   [[2.3] [Enter/Exit the Chroot]](#Enter.2FExit_the_Chroot)
+-   [[3] [Setup Crossdev]](#Setup_Crossdev)
+-   [[4] [Cross Container]](#Cross_Container)
+    -   [[4.1] [Install a cross compiler]](#Install_a_cross_compiler)
+    -   [[4.2] [Create the chroot]](#Create_the_chroot)
+    -   [[4.3] [Switch to native compiler]](#Switch_to_native_compiler)
+
+## [My hardware]
+
+My host system is an aging i7 860 with 8 gigs of ddr3 (and a cheap 1tb hdd\...) and I was \_utterly\_ unable to build a static qemu (or qemu-user for that matter).
+
+I will attach my configs for reference, and that would have helped me a bit..
+
+[CODE] **emerge \--info**
+
+    Portage 2.1.11.62 (default/linux/amd64/13.0/desktop/kde, gcc-4.6.3, glibc-2.15-r3, 3.8.10-gentoo-Lifespeed x86_64)
+    =================================================================
+    System uname: Linux-3.8.10-gentoo-Lifespeed-x86_64-Intel-R-_Core-TM-_i7_CPU_860_@_2.80GHz-with-gentoo-2.2
+    KiB Mem:     8168520 total,   1346656 free
+    KiB Swap:   16777212 total,  16776864 free
+    Timestamp of tree: Wed, 01 May 2013 00:30:01 +0000
+    ld GNU ld (GNU Binutils) 2.22
+    ccache version 3.1.9 [disabled]
+    app-shells/bash:          4.2_p37
+    dev-java/java-config:     2.1.12-r1
+    dev-lang/python:          2.6.8-r1, 2.7.3-r3, 3.1.5-r1, 3.2.3-r2
+    dev-util/ccache:          3.1.9
+    dev-util/cmake:           2.8.9
+    dev-util/pkgconfig:       0.28
+    sys-apps/baselayout:      2.2
+    sys-apps/openrc:          0.11.8
+    sys-apps/sandbox:         2.5
+    sys-devel/autoconf:       2.13, 2.69
+    sys-devel/automake:       1.9.6-r3, 1.11.6, 1.12.6
+    sys-devel/binutils:       2.22-r1
+    sys-devel/gcc:            4.6.3
+    sys-devel/gcc-config:     1.7.3
+    sys-devel/libtool:        2.4-r1
+    sys-devel/make:           3.82-r4
+    sys-kernel/linux-headers: 3.7 (virtual/os-headers)
+    sys-libs/glibc:           2.15-r3
+    Repositories: gentoo x-crossdev x-portage
+    Installed sets: @steam
+    ACCEPT_KEYWORDS="amd64"
+    ACCEPT_LICENSE="*"
+    CBUILD="x86_64-pc-linux-gnu"
+    CFLAGS="-march=native -O2 -pipe"
+    CHOST="x86_64-pc-linux-gnu"
+    CONFIG_PROTECT="/etc /usr/share/config /usr/share/gnupg/qualified.txt /usr/share/polkit-1/actions /var/bind /var/lib/hsqldb"
+    CONFIG_PROTECT_MASK="/etc/ca-certificates.conf /etc/env.d /etc/fonts/fonts.conf /etc/gconf /etc/gentoo-release \
+    /etc/php/apache2-php5.3/ext-active/ /etc/php/apache2-php5.4/ext-active/ /etc/php/cgi-php5.3/ext-active/ \
+    /etc/php/cgi-php5.4/ext-active/ /etc/php/cli-php5.3/ext-active/ etc/php/cli-php5.4/ext-active/ /etc/revdep-rebuild \
+    /etc/sandbox.d /etc/terminfo /etc/texmf/language.dat.d /etc/texmf/language.def.d /etc/texmf/updmap.d /etc/texmf/web2c"
+    CXXFLAGS="-march=native -O2 -pipe"
+    DISTDIR="/mnt/Storage/System/portage/distfiles"
+    EMERGE_DEFAULT_OPTS="--autounmask-write=y --buildpkg"
+    FCFLAGS="-O2 -pipe"
+    FEATURES="assume-digests binpkg-logs buildpkg clean-logs compressdebug config-protect-if-modified \
+    distlocks ebuild-locks fixlafiles installsources merge-sync metadata-transfer news parallel-fetch \
+    arallel-install preserve-libs protect-owned sandbox sfperms splitdebug strict \
+    unknown-features-warn unmerge-logs unmerge-orphans userfetch userpriv usersandbox usersync xattr"
+    FFLAGS="-O2 -pipe"
+    GENTOO_MIRRORS="http://distfiles.gentoo.org"
+    LDFLAGS="-Wl,-O1 -Wl,--as-needed"
+    MAKEOPTS="-j8"
+    PKGDIR="/mnt/Storage/System/portage/packages"
+    PORTAGE_CONFIGROOT="/"
+    PORTAGE_RSYNC_OPTS="--recursive --links --safe-links --perms --times --compress --force \
+    --whole-file --delete --stats --human-readable --timeout=180 --exclude=/distfiles \
+    --exclude=/local --exclude=/packages"
+    PORTAGE_TMPDIR="/mnt/Storage/System/var/tmp"
+    PORTDIR="/usr/portage"
+    PORTDIR_OVERLAY="/usr/local/crossdev /mnt/Storage/System/local/portage"
+    SYNC="rsync://rsync.gentoo.org/gentoo-portage
+
+    GRUB_PLATFORMS="pc"
+    INPUT_DEVICES="keyboard mouse evdev"
+    KERNEL="linux" LCD_DEVICES="bayrad cfontz cfontz633 glk hd44780 lb216 lcdm001 mtxorb ncurses text"
+    LIBREOFFICE_EXTENSIONS="presenter-console presenter-minimizer"
+    OFFICE_IMPLEMENTATION="libreoffice"
+    PHP_TARGETS="php5-3"
+    PYTHON_SINGLE_TARGET="python2_7"
+    PYTHON_TARGETS="python2_6 python2_7 python3_2"
+    RUBY_TARGETS="ruby18 ruby19"
+    USERLAND="GNU"
+    VIDEO_CARDS="nvidia v4l"
+    XTABLES_ADDONS="quota2 psd pknock lscan length2 ipv4options ipset ipp2p iface geoip fuzzy \
+     condition tee tarpit sysrq steal rawnat logmark ipmark dhcpmac delude chaos account"
+
+    Unset:  CPPFLAGS, CTARGET, INSTALL_MASK, LANG, LC_ALL, PORTAGE_BUNZIP2_COMMAND, PORTAGE_COMPRESS, \
+    PORTAGE_COMPRESS_FLAGS, PORTAGE_RSYNC_EXTRA_OPTS, USE_PYTHON
+
+    USE="X X509 Xaw3d a52 aac aacplus aacs aalib acl acpi active-response admin aes aes-ccm \
+    airdrop-ng airgraph-ng alsa amavis ambiance amd64 android apache2 asf aspell audio audiofile \
+    audioscrobbler authdaemond auto-completion automount background bash-completion bazaar \
+    binary-drivers bluetooth bluray bonobo branding bzip2 cairo caps ccache cdda cddb cdemu-daemon \
+    cdio cdparanoia cdr cdrdao cdrom cdsound cec cgi cgi-lua cgi-php cgroup clamav clamd clamdtop cli \
+    clvm cmake colord colordiff colorio connection-sharing connectivity conntrack consolekit contrib \
+    corefonts courier courierauth cpio cpudetection cpufreq cpufreq_bench cpuload cpumining cpusets \
+    cracklib cramfs crda creds crossdev crossfade crypt crypto cryptokit cryptsetup cuda cue cups curl \
+    curlwrappers cxx dbus declarative device-mapper dga direct2d directfb directx dlz dri dtmf dts dv \
+    dvb dvbplayer dvbpsi dvbsetup dvd dvdarchive dvdchapjump dvdnav dvdr dvi dvipdfm dvlfriendlyfnames \
+    dvlvidprefer dxr3 dynmasq e2fsprogs ebook eclipse emboss encode examples exif faillog fallback fam \
+    fax fbcondecor fbdev fbsplash ffmpeg ffmpegsource firefox flac flash fortran fuse gconf gd gdbm \
+    gif gkrellm gmail gnutls google googledrive gphoto2 gpm gstreamer gtk gui h224 handbook hd hddtemp \
+    hdf hires-icons hls holidays host hostip hpcups hpijs html http http-cache hwdb hwinfo icons \
+    consets iconv icq ics id3tag image image-cache imagemagick imaging imap imlib imlib2 info \
+    injection inotify input_control input_file input_uvc intel_led introspection ioctl iodbc ios \
+    ios-vout iostats ipc ipod iproute2 iptables iptv ipv6 irc irda iscsi iso ivorbis jabber \
+    jabbersearch jack java john jpeg kate kdcraw kde kdecards kdenlive kdepim kdm kipi kismet \
+    kmod konqueror lastfm lcd lcms led libburn libextractor libkms libnotify libwww lm_sensors lock \
+    log log4j logger logging logrotate logwatch loop-aes lua lua-cairo lua-imlib luajit lv2 lvm lvm1 \
+    lzma lzo mad madwifi magic maildir man map maps matroska media media-library mediaplayer memcache \
+    memcached memmap mercurial messages messaging mmap mms mmx mmxext mng modules mount mount-locking \
+    mouse mousewheel mozilla mp3 mp3rtp mp3tunes mp4 mpd mpeg mpeg2 mpfi mpg123 mplayer msn mssql mtp \
+    mudflap multicore multilib multimedia multinetwork multipath music musicbrainz mysql ncat ncurses \
+    netbeans netlink netware network nforce2 nfs nfsdcld nfsidmap nfsv3 nfsv4 nfsv41 nftrack nic3com \
+    nicintel nicintel_spi nicnatsemi nicrealtek nids nls nntp nocd normalize normalizer nptl nsplugin \
+    nss nsscache nssdb ntfs ntfsprogs ntlm ntp nvcontrol nvidia nvtt offensive office ogg ogg123 ogm \
+    ogp_spi opencl openconnect openct opencv opengl openid openmedia openmp openssl opensslcrypt \
+    openstreetmap organizer osc osd osdmaxitems osdmenu osgapps osmesa pam pam_krb5 pam_ssh pango \
+    panorama parport parted pcre pdf phonon php pixmaps plasma player playlist plugin-syslog plugins \
+    pm pm-utils pmu png pnm podcast policykit portmon postscript povray powertop ppds prelink \
+    pulseaudio pvr python python-bindings qt-dbus qt3support qt4 quicktime radio radius raid ramfs rar \
+    ratelimit rdesktop readline recode recommended recorder recording rememberthemilk remote \
+    remotecontrol replaygain rss rsxs sasl scanfolder scanner screen screensaver script scrobbler \
+    sctp sdl sdl-image sdl-sound sdlaudio sdlgfx semantic-desktop sensord sensors serprog server \
+    session setup sftp shm shmvideo shout skins skype slideshow smart smartcard smbclient \
+    smbkrb5passwd smbsharemodes smbtav2 smp smpeg sms sndfile sniffer snmp snort sockets socks socks5 \
+    sound spamassassin spell sqlite sse sse2 sse2_4way sse4 sse4_1 ssh ssl ssse3 startup-notification \
+    status subtitles subversion sudo svg symlink syslog systeminfo systemtap sysvipc t1lib taglib \
+    tcpd tcpdump telepathy threads thumbnail thumbnails thunderbird tiff tools truetype tv tv_check \
+    tv_combiner tv_pick_cgi twitter twolame udev udisks udisks2 unicode unicode3 upnp upower ups usb \
+    usbhost usbredir utempter utilities utils uuid uxa v4l vaapi vcd vcdx vdpau vhosts video vidmode \
+    virtualbox visualizer vlc vlm vnc volpack vorbis vpx wallpapers wareagleicon wav wavpack weather \
+    web web-services webcam webcheck webdav webdav-neon webdav-serf webgl webinterface webkit webkit2 \
+    webmail webp webphoto webpresence webrtc-aec wifi win32 win64 winbind windeco wineappdb wingdi \
+    wininst winpopup wireshark wma wma-fixed wmf word-perfect wordexp wordperfect wpg wps www \
+    wxwidgets x264 x86-64 x86emu xattr xcap xcb xcf xchat xcomposite xdg xft xgetdefault xinerama xml \
+    xmltv xmms2 xmp xorg xosd xpm xps xrandr xrender xscreensaver xsettings xv xvid xvmc youtube zip \
+    zlib zsh-completion ztv zvbi" ABI_X86="64" ALSA_CARDS="ali5451 als4000 atiixp atiixp-modem bt87x \
+    ca0106 cmipci emu10k1x ens1370 ens1371 es1938 es1968 fm801 hda-intel intel8x0 intel8x0m maestro3 \
+    trident usb-audio via82xx via82xx-modem ymfpci" ALSA_PCM_PLUGINS="adpcm alaw asym copy dmix dshare \
+    dsnoop empty extplug file hooks iec958 ioplug ladspa lfloat linear meter mmap_emul mulaw multi \
+    plug rate route share shm softvol" APACHE2_MODULES="authn_core authz_core socache_shmcb unixd \
+    actions alias auth_basic authn_alias authn_anon authn_dbm authn_default authn_file authz_dbm \
+    authz_default authz_groupfile authz_host authz_owner authz_user autoindex cache cgi cgid dav \
+    dav_fs dav_lock deflate dir disk_cache env expires ext_filter file_cache filter headers include \
+    info log_config logio mem_cache mime mime_magic negotiation rewrite setenvif speling status \
+    unique_id userdir usertrack vhost_alias" CALLIGRA_FEATURES="kexi words flow plan sheets stage \
+    tables krita karbon braindump author" CAMERAS="ptp2" COLLECTD_PLUGINS="df interface irq load \
+    memory rrdtool swap syslog" ELIBC="glibc" GPSD_PROTOCOLS="ashtech aivdm earthmate evermore fv18 \
+    garmin garmintxt gpsclock itrax mtk3301 nmea ntrip navcom oceanserver oldstyle oncore rtcm104v2 \
+    rtcm104v3 sirf superstar2 timing tsip tripmate tnt ubx"
+
+## [][Isn\'t a chroot good enough?]
+
+Short answer, no. As soon as you try to build python, GCC, or any number of others you begin to see. The issue is that many of these programs perform tests to verify function, or use helpers to compile bytecode etc. Seems like not an issue, until you think about whats happening here: You are generating binaries for arm that the build system then tries to execute to verify they work. Our solution is to use qemu to run them.
+
+With QEMU user emulation you can run non-native executables. I.e. with QEMU configured for arm-linux-user you can run arm binaries. Unfortunately, without any further configuration, you can run only static executables. For dynamic executables you need to have all the libraries the executable depends on, built for the same architecture as the main executable (ARM here). This at first sight poses a problem \-- you need pretty much the same standard libraries that you already have in your system (glibc, \...), but for a different architecture.
+
+Such situation (wanting a different set of libraries) can be solved by a chroot. It would also nicely isolate your new ARM linux install. But ordinary chroot must keep the same architecture. Without one more ingredient to the mix you would only get:
+
+`user `[`$`]`chroot`
+
+    failed to run command `/bin/bash': Exec format error
+
+The last magic ingredient is binfmt_misc. Binfmt_misc generalizes the classical shebang, allowing you to associate custom interpreters to specific file types. Yes, you guessed it \-- it allows us to associate ARM (or some other arch) ELF executables with our qemu. After setting up the association the executables can be run the same way as native executables, without specifying QEMU on the command line.
+
+So, to recap: We use
+
+       qemu user emulation to run the ARM executables
+       chroot as a place to keep the installed distro including the required dynamic libraries
+       binfmt_misc to tell the kernel to run ARM ELF executables with the help of qemu
+
+There\'s one last thing to resolve: We need a static build of QEMU, so that QEMU itself doesn\'t need any libraries. \-- With dynamic QEMU, we\'d find ourselves with the need of native libraries inside the chroot, which would defeat the purpouse.
+
+Ready? Lets get started..
+
+### [Setting the required kernel options]
+
+In order for binfmt_misc support to work, we need to enable the appropriate kernel drivers. As well, there is some VIRTIO and KVM stuff that will be useful. You all know how to config a kernel, i assume. If not, have a look at the Gentoo Handbook, and come on back when you\'re ready.
+
+Here is the relevant kernel option:
+
+[KERNEL] **3.2.1-gentoo-r2**
+
+    Executable file formats / Emulations  --->
+     [*] Kernel support for MISC binaries
+
+[CODE] **zgrep CONFIG_BINFMT_MISC /proc/config.gz**
+
+    CONFIG_BINFMT_MISC=y || CONFIG_BINFMT_MISC=m
+
+get that building if needed, and well turn to qemu-user.
+
+### [install static qemu-user]
+
+I tried for a couple days to get this to compile with static libs. Turns out there are come issues with glib that prevent it. However, debian provides one that\'ll do nicely. (If this link goes bad, you can browse their current versions \[[here](http://packages.debian.org/sid/qemu-user-static)\].)
+
+`user `[`$`]`wget "`[`http://http.us.debian.org/debian/pool/main/q/qemu/qemu-user-static_2.0.0+dfsg-7_amd64.deb`](http://http.us.debian.org/debian/pool/main/q/qemu/qemu-user-static_2.0.0+dfsg-7_amd64.deb)`"`
+
+Grab Alien if you dont have it, this will let us easily strip the package off our binary.
+
+`root `[`#`]`emerge --ask alien`
+
+unpack it with
+
+`user `[`$`]`alien -t qemu-user-static_2.0.0+dfsg-7_amd64.deb `
+
+which will spit out a nice tarball. The only file I cared about was qemu-arm-static which is the arm interpreter. Extract and copy qemu-arm-static to /usr/bin/qemu-arm
+
+`user `[`$`]`mkdir qemu-user-static `
+
+`user `[`$`]`tar xvzpf qemu-user-static-2.0.0+dfsg.tgz -C qemu-user-static `
+
+`user `[`$`]`cp qemu-user-static/usr/bin/qemu-arm-static /usr/bin/qemu-arm `
+
+`user `[`$`]`echo rm -rf qemu-user-static* `
+
+#### [Binfmt_misc Configuration]
+
+Now mount the binfmt_misc handler if it\'s not already, then we need to register our format with the kernel via the procfs.
+
+`root `[`#`]`[ -d /proc/sys/fs/binfmt_misc ] || modprobe binfmt_misc `
+
+`root `[`#`]`[ -f /proc/sys/fs/binfmt_misc/register ] || mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc `
+
+Next, register qemu-user-arch to the binfmt_misc module. You don\'t need to add them one by one and Luca has provided a initscript to get the bin formats registered. You can use it:
+
+`root `[`#`]`/etc/init.d/qemu-binfmt start`
+
+or start the service on bootstrap:
+
+`root `[`#`]`rc-update add qemu-binfmt default`
+
+You could learn more detail of registering bin formats through /usr/portage/app-emulation/qemu-user/files/qemu-binfmt.initd.
+
+### [][Enter/Exit the Chroot]
+
+Firstly, you should chose and download a stage3 tarball from [installation media](http://www.gentoo.org/main/en/where.xml). We take arm arch as an example to show how to enter/exit the chroot.
+
+-   Download and unpack arm stage tarball:
+
+`root `[`#`]`mkdir arm-chroot && cd arm-chroot`
+
+`root `[`#`]`wget http:// stage3-armv7a-date.tar.bz2`
+
+`root `[`#`]`tar -xvf stage3-armv7a-date.tar.bz2`
+
+-   Install the static qemu-user into the chroot:
+
+`root `[`#`]`ROOT=$PWD/ emerge -K qemu-user`
+
+-   Mount the required directories:
+
+`root `[`#`]`mkdir -p usr/portage`
+
+`root `[`#`]` mount --bind /usr/portage usr/portage `
+
+`root `[`#`]` mount --bind /proc proc `
+
+`root `[`#`]` mount --bind /sys sys`
+
+-   Chroot into the environment:
+
+`root `[`#`]`chroot . /bin/busybox mdev -s `
+
+`root `[`#`]` chroot . /bin/bash --login`
+
+-   Unmount stuff when not in use:
+
+`root `[`#`]`umount usr/portage `
+
+`root `[`#`]` umount sys `
+
+`root `[`#`]` umount proc`
+
+## [Setup Crossdev]
+
+The first thing that is necessary is the creation of an [ebuild repository](https://wiki.gentoo.org/wiki/Ebuild_repository "Ebuild repository"). If you have one, emerge the script:
+
+`root `[`#`]`emerge --ask sys-devel/crossdev`
+
+This will provide you with the crossdev script. This script automates the steps necessary to build a toolchain. These steps are, in short:
+
+1.  binutils: Build a cross-binutils, which links and processes for the target architecture.
+2.  linux-headers: Install a set of C library and kernel headers for the target architecture.
+3.  libc-headers: Additional header files
+4.  gcc-stage-1: Build a basic (stage 1) gcc cross-compiler. This will be used to compile the C library. It will be unable to build anything almost else (because it can\'t link against the C library it doesn\'t have).
+5.  libc: Build the cross-compiled C library (using the stage 1 cross compiler).
+6.  gcc-stage-2: Build a full (stage 2) C cross-compiler.
+
+All cross toolchains will be kept locally in the ebuild repository, separate from native tools.
+
+[FILE] **`/etc/portage/make.conf`**
+
+    source /var/lib/layman/make.conf
+
+    PORTDIR_OVERLAY="/usr/local/portage $"
+
+The script is used like:
+
+`root `[`#`]`crossdev -t powerpc-unknown-linux-gnu`
+
+This will build a cross-compiling toolchain for PowerPC machines.
+
+By default, the newest stable version of the binutils, libraries, and C compiler will be used. It is quite often the case they will not compile themselves through the entire build process. Less bleeding edge versions can be specified with additional flags:
+
+    --b 2.22      # specifies the version of binutils
+    --g 4.6.3     # specifies the version of gcc
+    --l 2.15-r2   # specifies the version of the tuple-specified libc
+    --k 3.5       # specifies the version of the kernel headers
+
+It is recommended trying older versions, particularly of gcc, if the script fails.
+
+If you want to remove a toolchain, use the clean flag:
+
+`root `[`#`]`crossdev -C powerpc-unknown-linux-gnu`
+
+This will unmerge the packages created by crossdev.
+
+If you got the errors about fortran, use the fellow command:
+
+`root `[`#`]`USE="-fortran nossp" crossdev -t powerpc-unknown-linux-gnu`
+
+## [Cross Container]
+
+The lxc.sh tool can download, configure and create a multi-arch gentoo guest. Using this tool, the user build a native gcc in chroot. You can download it here: [lxc.sh](https://github.com/jinghuang/cross_container_support)
+
+Next, we will take **armv7a_hardfloat** as a example to build the native compiler in chroot.
+
+### [Install a cross compiler]
+
+You must install the cross compiler manually:
+
+`root `[`#`]`USE="-fortran nossp" crossdev -t armv7a-hardfloat-linux-gnueabi`
+
+### [Create the chroot]
+
+You can create an arm gentoo guest:
+
+`root `[`#`]`./lxc.sh create -i `*`ip_address`*` -g `*`gateway`*` -n `*`guest_name`*` -r `*`rootfs`*` -a arm`\
+`What is the subarch of arm? armv7a`
+
+You can also start and destroy the arm gentoo guest:
+
+`root `[`#`]`./lxc.sh start -n `*`guest_name`*
+
+`root `[`#`]`./lxc.sh destroy -n `*`guest_name`*` -r `*`rootfs`*
+
+Additional developers, bug fixes, comments, etc. are welcome.
+
+### [Switch to native compiler]
+
+In chroot, you can switch to native compiler:
+
+`root `[`#`]`cd /root `
+
+`root `[`#`]`source switch.sh native `
+
+Then, you can get the native armv7a-hardfloat-linux-gnueabi-gcc. To use it, just specify the **CC=armv7a-hardfloat-linux-gnueabi-gcc** in the Makefile.
+
+You also could switch to emulated gcc as well:
+
+`root `[`#`]`source switch.sh emu`

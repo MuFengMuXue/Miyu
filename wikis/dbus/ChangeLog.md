@@ -1,0 +1,1 @@
+2008-04-16 John (J5) Palmieri \* tools/dbus-monitor.c: take out the trailing comma in the ProfileAttributeFlags enum as it isn't in our style guides and causes some compilers to error out

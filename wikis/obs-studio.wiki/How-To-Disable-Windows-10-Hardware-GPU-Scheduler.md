@@ -1,0 +1,1 @@
+This information can be found in the [knowledge base](https://obsproject.com/kb/hags).

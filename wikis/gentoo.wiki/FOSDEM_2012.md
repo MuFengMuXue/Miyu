@@ -1,0 +1,17 @@
+On 4.-5. February 2012, the [Free and Open Source Software Developers\' European Meeting FOSDEM 2012](https://fosdem.org/2012/) will take place in Brussels, Belgium. Naturally a Gentoo crowd will be there; this page is intended to collect public information about our presence and help organizing stuff.
+
+## [Developers available at FOSDEM]
+
+  ----------- -------------------- -------------------- ----------------------------- ------------------------- --------------------------------------- ----------
+  Nick        Arrival              Departure            Will be at Beer Event (Fri)   Will be at Dinner (Sat)   Spoken Languages                        Comments
+  mduft       Fri 3. 2. \~ 18:00   Sun 5. 2. \~ 16:00   Yes                           Yes                       German, English
+  haubi       Fri 3. 2. \~ 18:00   Sun 5. 2. \~ 16:00   Yes                           Yes                       German, English
+  dilfridge   Fri 3. 2. \~ 18:00   Sun 5. 2. \~ 16:00   Yes                           Yes                       German, English, Francais, Nederlands
+  wired       Fri 3. 2. \~ 18:00   Mon 6. 2. \~ 11:00   Yes                           Yes                       English, Greek, Code
+  SwifT       Fri 3. 2. \~ 18:30   Sun 5. 2. \~ 18:00   Perhaps                       Yes                       English, Nederlands
+  leio        Fri \~19:00@BRU      Mon \~19:00@BRU      Yes                           Perhaps                   English, Estonian
+  ----------- -------------------- -------------------- ----------------------------- ------------------------- --------------------------------------- ----------
+
+## [IRC]
+
+Join #gentoo-meetings \... :)

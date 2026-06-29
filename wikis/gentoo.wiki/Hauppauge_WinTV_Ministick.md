@@ -1,0 +1,718 @@
+This tutorial show how to use the Hauppauge WinTV Ministick for DVB-T TV. I will also show how to use the remote control with lirc.
+
+## Contents
+
+-   [[1] [Installation]](#Installation)
+    -   [[1.1] [Kernel]](#Kernel)
+    -   [[1.2] [Firmware]](#Firmware)
+    -   [[1.3] [Check Kernel Configuration]](#Check_Kernel_Configuration)
+    -   [[1.4] [Gentoo]](#Gentoo)
+        -   [[1.4.1] [USE flags]](#USE_flags)
+        -   [[1.4.2] [LIRCd]](#LIRCd)
+-   [[2] [Setting up TV with VLC]](#Setting_up_TV_with_VLC)
+    -   [[2.1] [Scan for Channels]](#Scan_for_Channels)
+    -   [[2.2] [Using Teletext]](#Using_Teletext)
+    -   [[2.3] [EPG]](#EPG)
+-   [[3] [Remote Control PT# R-005 (LIRC)]](#Remote_Control_PT.23_R-005_.28LIRC.29)
+    -   [[3.1] [Keymap]](#Keymap)
+    -   [[3.2] [Load the keymap at boot]](#Load_the_keymap_at_boot)
+        -   [[3.2.1] [Option1: With udev over /etc/rc_maps.cfg]](#Option1:_With_udev_over_.2Fetc.2Frc_maps.cfg)
+        -   [[3.2.2] [Option2: Manual with /etc/local.d/ir-keytable.start]](#Option2:_Manual_with_.2Fetc.2Flocal.d.2Fir-keytable.start)
+    -   [[3.3] [Xorg]](#Xorg)
+    -   [[3.4] [LIRC]](#LIRC)
+    -   [[3.5] [Test the LIRCd]](#Test_the_LIRCd)
+    -   [[3.6] [Example .lircrc]](#Example_.lircrc)
+
+## [Installation]
+
+### [Kernel]
+
+You need [USB](https://wiki.gentoo.org/wiki/USB "USB") and [Evdev](https://wiki.gentoo.org/wiki/Evdev "Evdev") support.
+
+[KERNEL]
+
+    Device Drivers  --->
+        Multimedia support --->
+            <M>   DVB for Linux
+            [*]   DVB/ATSC adapters  --->
+                <M>   Siano SMS1xxx based MDTV receiver
+                    Siano module components  --->
+                         <M> USB interface support
+        <M>   Remote Controller adapters  --->
+            <M>   Compile Remote Controller keymap modules
+            <M>   Enable IR raw decoder for the RC-5 protocol
+
+### [Firmware]
+
+The firmware is included in the [[[sys-kernel/linux-firmware]](https://packages.gentoo.org/packages/sys-kernel/linux-firmware)[]] package from version 20150206.
+
+### [Check Kernel Configuration]
+
+When you have compiled the needed modules and the firmware was correct loaded so you see something like the output here from my dmesg.
+
+[FILE] **`/var/log/dmesg`**
+
+    smscore_set_device_mode: firmware download success: sms1xxx-hcw-55xxx-dvbt-02.fw
+    [   21.580730] sms_ir_init: Allocating rc device
+    [   21.580759] sms_ir_init: IR port 0, timeout 100 ms
+    [   21.580764] sms_ir_init: Input device (IR) SMS IR (Hauppauge WinTV MiniStick) is set for key events
+    [   21.841527] Registered IR keymap rc-hauppauge
+    [   21.844000] input: SMS IR (Hauppauge WinTV MiniStick) as /devices/pci0000:00/0000:00:1f.2/usb1/1-2/rc/rc0/input4
+    [   21.844877] rc0: SMS IR (Hauppauge WinTV MiniStick) as /devices/pci0000:00/0000:00:1f.2/usb1/1-2/rc/rc0
+    [   21.953808] IR NEC protocol handler initialized
+    [   22.054223] IR RC5(x) protocol handler initialized
+    [   22.160311] DVB: registering new adapter (Hauppauge WinTV MiniStick)
+    [   22.169410] usb 1-2: DVB: registering adapter 0 frontend 0 (Siano Mobile Digital MDTV Receiver)...
+    [   22.185111] usbcore: registered new interface driver smsusb
+    [   22.197399] IR RC6 protocol handler initialized
+    [   22.244671] IR JVC protocol handler initialized
+    [   22.357176] IR Sony protocol handler initialized
+    [   22.421880] IR SANYO protocol handler initialized
+    [   22.500133] input: MCE IR Keyboard/Mouse (smsmdtv) as /devices/virtual/input/input5
+    [   22.500893] IR MCE Keyboard/mouse protocol handler initialized
+    [   22.581617] lirc_dev: IR Remote Control driver registered, major 250
+    [   22.626457] rc rc0: lirc_dev: driver ir-lirc-codec (smsmdtv) registered at minor = 0
+    [   22.626471] IR LIRC bridge handler initialized
+
+To check the event devices you can use the **lsinput** tool out of the [[[sys-apps/input-utils]](https://packages.gentoo.org/packages/sys-apps/input-utils)[]] package.
+
+`root `[`#`]`lsinput`
+
+    /dev/input/event4
+       bustype : (null)
+       vendor  : 0x0
+       product : 0x0
+       version : 0
+       name    : "SMS IR (Hauppauge WinTV MiniStic"
+       phys    : "usb-0000:00:1f.2-2/ir0"
+       bits ev : EV_SYN EV_KEY EV_MSC EV_REP
+
+    /dev/input/event5
+       bustype : (null)
+       vendor  : 0x0
+       product : 0x0
+       version : 0
+       name    : "MCE IR Keyboard/Mouse (smsmdtv)"
+       phys    : "/input0"
+       bits ev : EV_SYN EV_KEY EV_REL EV_MSC EV_REP
+
+**Udevadm**
+
+`root `[`#`]`udevadm info -q all -n /dev/input/event4`
+
+    P: /devices/pci0000:00/0000:00:1f.2/usb1/1-2/rc/rc0/input4/event4
+    N: input/event4
+    S: input/by-path/pci-0000:00:1f.2-usb-0:2-event-ir
+    E: DEVLINKS=/dev/input/by-path/pci-0000:00:1f.2-usb-0:2-event-ir
+    E: DEVNAME=/dev/input/event4
+    E: DEVPATH=/devices/pci0000:00/0000:00:1f.2/usb1/1-2/rc/rc0/input4/event4
+    E: ID_INPUT=1
+    E: ID_INPUT_KEY=1
+    E: ID_PATH=pci-0000:00:1f.2-usb-0:2
+    E: ID_PATH_TAG=pci-0000_00_1f_2-usb-0_2
+    E: ID_SERIAL=noserial
+    E: MAJOR=13
+    E: MINOR=68
+    E: SUBSYSTEM=input
+    E: UDEV_LOG=3
+    E: USEC_INITIALIZED=20837104
+    E: XKBLAYOUT=de
+    E: XKBMODEL=pc105
+    E: XKBVARIANT=nodeadkeys
+
+** Important**\
+Later when we create or own **InputClass** and set the **Ignore** stuff in [/etc/X11/xorg.conf]. For this we use the eventX name and that string is limited. So we can\'t use the full string of the device name as shown in **dmesg** output. For the lirc daemon device path we use a syntax that allow us later to plug the stick where we want on the usb bus.
+
+### [Gentoo]
+
+#### [USE flags]
+
+[FILE] **`/etc/portage/make.conf`**
+
+    USE="lirc zvbi"
+
+`root `[`#`]`emerge --ask --newuse --deep @world`
+
+#### [LIRCd]
+
+[FILE] **`/etc/portage/package.use/lirc`**
+
+    */* LIRC_DEVICES: devinput
+
+Install [[[app-misc/lirc]](https://packages.gentoo.org/packages/app-misc/lirc)[]]:
+
+`root `[`#`]`emerge --ask --oneshot lirc`
+
+## [Setting up TV with VLC]
+
+To use the dvb device you have to be member of the **video** group:
+
+`root `[`#`]`usermod -a -G video username`
+
+### [Scan for Channels]
+
+The **scan** utility is comming with the [[[media-tv/linuxtv-dvb-apps]](https://packages.gentoo.org/packages/media-tv/linuxtv-dvb-apps)[]] package. The next step is to find the correct initial-tuning file for your location.
+
+`user `[`$`]`scan -x 0 /usr/share/dvb/dvb-t/de-Saarland > channels.conf`
+
+    scanning /usr/share/dvb/dvb-t/de-Saarland
+    using '/dev/dvb/adapter0/frontend0' and '/dev/dvb/adapter0/demux0'
+    initial transponder 546000000 0 2 9 1 1 3 0
+    initial transponder 642000000 0 2 9 1 1 3 0
+    initial transponder 658000000 0 2 9 1 1 3 0
+    initial transponder 698000000 0 2 9 1 1 3 0
+    >>> tune to: 546000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_AUTO:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE
+    0x0000 0x0202: pmt_pid 0x0000 ZDFmobil -- ZDF (running)
+    0x0000 0x0203: pmt_pid 0x0000 ZDFmobil -- 3sat (running)
+    0x0000 0x0204: pmt_pid 0x0000 ZDFmobil -- ZDFinfo (running)
+    0x0000 0x0205: pmt_pid 0x0000 ZDFmobil -- neo/KiKA (running)
+    Network Name 'ZDF'
+    >>> tune to: 642000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_AUTO:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE
+    0x0000 0x0002: pmt_pid 0x1120 ARD -- Arte (running)
+    0x0000 0x0003: pmt_pid 0x1130 ARD -- Phoenix (running)
+    0x0000 0x00d0: pmt_pid 0x1110 ARD -- Das Erste (running)
+    0x0000 0x00d1: pmt_pid 0x1140 ARD -- SR-Fernsehen (running)
+    Network Name 'ARD SR'
+    >>> tune to: 658000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_AUTO:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE
+    0x0000 0x0022: pmt_pid 0x0400 SWR -- Bayerisches FS (running)
+    0x0000 0x0041: pmt_pid 0x0200 SWR -- hr-fernsehen (running)
+    0x0000 0x00e2: pmt_pid 0x0100 SWR -- SWR Fernsehen RP (running)
+    0x0000 0x0106: pmt_pid 0x0300 SWR -- WDR Fernsehen (running)
+    Network Name 'SWR RP'
+    >>> tune to: 698000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_AUTO:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE
+    0x0000 0x401d: pmt_pid 0x01d0 BetaDigital -- TELE 5 (running)
+    0x0000 0x4014: pmt_pid 0x0140 MEDIA BROADCAST -- QVC (running)
+    0x0000 0x402a: pmt_pid 0x02a0 MEDIA BROADCAST -- Bibel TV (running)
+    0x0000 0x4101: pmt_pid 0x1010 MEDIA BROADCAST -- Multithek (running)
+    Network Name 'MEDIA BROADCAST'
+    >>> tune to: 570000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_1_2:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE
+    WARNING: >>> tuning failed!!!
+    >>> tune to: 570000000:INVERSION_AUTO:BANDWIDTH_8_MHZ:FEC_2_3:FEC_1_2:QAM_16:TRANSMISSION_MODE_8K:GUARD_INTERVAL_1_4:HIERARCHY_NONE (tuning failed)
+    WARNING: >>> tuning failed!!!
+    dumping lists (16 services)
+    Done.
+
+### [Using Teletext]
+
+Using the teletext function in vlc is pretty easy. Compile [[[media-video/vlc]](https://packages.gentoo.org/packages/media-video/vlc)[]] with **zvbi** useflag and it works like a sharm. Start VLC and load the [channels.conf] file, open a channel and you should see a button for teletext on the OSD.
+
+### [EPG]
+
+VLC also knows to handle EPG data. You find the **Programm Guide** under **Extras**. The problem is that VLC can only handle the current channel, other programms like me-tv get the data from all channels.
+
+## [][Remote Control PT# R-005 (LIRC)]
+
+Here you will find the steps to use the remote control PT# R-005.
+
+### [Keymap]
+
+[FILE] **`/etc/rc_keymaps/hauppauge_novaTD`**
+
+    # table hauppauge_novaTD_usb type: RC5
+    0x1c25 KEY_SELECT
+    0x1c3d KEY_POWER
+    0x1c3b KEY_HOME
+    0x1c1c KEY_TV
+    0x1c14 KEY_UP
+    0x1c15 KEY_DOWN
+    0x1c16 KEY_LEFT
+    0x1c17 KEY_RIGHT
+    0x1c25 KEY_OK
+    0x1c1f KEY_EXIT
+    0x1c0d KEY_MENU
+    0x1c10 KEY_VOLUMEUP
+    0x1c11 KEY_VOLUMEDOWN
+    0x1c12 KEY_PREVIOUS
+    0x1c0f KEY_MUTE
+    0x1c20 KEY_CHANNELUP
+    0x1c21 KEY_CHANNELDOWN
+    0x1c37 KEY_RECORD
+    0x1c36 KEY_STOP
+    0x1c32 KEY_REWIND
+    0x1c35 KEY_PLAY
+    0x1c34 KEY_FASTFORWARD
+    0x1c24 KEY_PREVIOUSSONG
+    0x1c30 KEY_PAUSE
+    0x1c1e KEY_NEXTSONG
+    0x1c01 KEY_1
+    0x1c02 KEY_2
+    0x1c03 KEY_3
+    0x1c04 KEY_4
+    0x1c05 KEY_5
+    0x1c06 KEY_6
+    0x1c07 KEY_7
+    0x1c08 KEY_8
+    0x1c09 KEY_9
+    0x1c0a KEY_TEXT
+    0x1c00 KEY_0
+    0x1c0e KEY_SUBTITLE
+
+### [Load the keymap at boot]
+
+Install media-tv/v4l-utils to get ir-keytable.
+
+#### [][Option1: With udev over /etc/rc_maps.cfg]
+
+Normally it should be enough to add CONFIG_RC_MAP support in your kernel. This point I already added to the kernel installation section of this howto.
+
+** Important**\
+Testing it for gentoo. At time I only use it with Ubuntu 12.04.1 LTS and 12.10.
+
+The trigger to load our new IR keymap comes from udev when the CONFIG_RC_MAP support is enabled.
+
+[FILE] **`/lib/udev/rules.d/40-ir-keytable.rules`**
+
+    # Automatically load the proper keymaps after the Remote Controller device
+    # creation.
+    # The keycode tables rules should be at /etc/rc_maps.cfg
+
+    ACTION=="add", SUBSYSTEM=="rc", RUN+="/usr/bin/ir-keytable -a /etc/rc_maps.cfg -s $name"
+
+Here we simply add or edit the **rc-hauppauge** line as shown in the box below.
+
+[FILE] **`/etc/rc_maps.conf`**
+
+    *       rc-hauppauge             /lib/udev/rc_keymaps/hauppauge
+
+Replace **/lib/udev/rc_keymaps/hauppauge** with **/etc/rc_keymaps/hauppauge_novaTD**.
+
+#### [][Option2: Manual with /etc/local.d/ir-keytable.start]
+
+** Note**\
+Do not add the lircd to default runlevel. The daemon will started through the **/etc/local.d/ir-keytable.start** script. And also note that the script need the executable flag **chmod u+x /etc/local.d/ir-keytable.start**
+
+[FILE] **`/etc/local.d/ir-keytable.start`**
+
+    ir-keytable -c --protocol=rc-5 -w /etc/rc_keymaps/hauppauge_novaTD
+    ir-keytable --delay=500
+    ir-keytable --period=50
+    /etc/init.d/lircd start
+
+### [Xorg]
+
+Ignore the remote control devices in Xorg.
+
+** Note**\
+If you plan to use the MCE IR Keyboard/Mouse you need to remove the MCE string from **MatchProduct**
+
+[FILE] **`/etc/X11/xorg.conf`**
+
+    Section "InputClass"
+        Identifier  "Ignore Hauppauge WinTV MiniStick IR Devices"
+        MatchProduct    "SMS IR (Hauppauge WinTV MiniStic|MCE IR Keyboard/Mouse (smsmdtv)"
+        Option      "Ignore" "true"
+    EndSection
+
+### [LIRC]
+
+[FILE] **`/etc/lirc/hardware.conf`**
+
+    REMOTE="Nova-TD"
+    REMOTE_MODULES=""
+    REMOTE_DRIVER="devinput"
+    REMOTE_DEVICE="phys=usb-*/ir*"
+    REMOTE_SOCKET="/var/run/lirc/lircd"
+    REMOTE_LIRCD_CONF=""
+
+[FILE] **`/etc/lirc/lircd.conf`**
+
+    include "/usr/share/lirc/extras/more_remotes/hauppauge/lircd.conf.hauppauge_novaTD_usb"
+
+[FILE] **`/usr/share/lirc/extras/more_remotes/hauppauge/lircd.conf.hauppauge_novaTD_usb`**
+
+    #
+    # brand:                       Hauppauge NOVA-TD
+    # model no. of remote control: Hauppage Nova-TD R-005
+    #
+
+    begin remote
+
+     name       NOVA-TD
+     bits           16
+     eps            30
+     aeps          100
+
+     one             0     0
+     zero            0     0
+     pre_data_bits   16
+     pre_data        0x8001
+     gap             100000
+     toggle_bit      0
+
+         begin codes
+             Go                       0x0162
+         Home             0x0066
+         Teletext         0x0184
+         Captions         0x0172
+             Power                    0x0074
+             TV                       0x0179
+             Videos                   0x0189
+             Music                    0x0188
+             Pictures                 0x00E2
+             Guide                    0x016D
+             Radio                    0x0181
+             ArrowUp                  0x0067
+             ArrowLeft                0x0069
+             OK                       0x0160
+             ArrowRight               0x006A
+             ArrowDown                0x006C
+             BackExit                 0x00AE
+             Menu                     0x008B
+             VolumeUp                 0x0073
+             VolumeDown               0x0072
+             PrevCh                   0x016B
+             Mute                     0x0071
+             ChannelUp                0x0192
+             ChannelDown              0x0193
+             Record                   0x00A7
+             Rewind                   0x00A8
+             SkipBack                 0x00A5
+             Play                     0x00CF
+             Pause                    0x0077
+             Stop                     0x0080
+             Fwdwind                  0x00D0
+             SkipFwd                  0x00A3
+             1                        0x0002
+             2                        0x0003
+             3                        0x0004
+             4                        0x0005
+             5                        0x0006
+             6                        0x0007
+             7                        0x0008
+             8                        0x0009
+             9                        0x000A
+             *                        0x0037
+             0                        0x000B
+             #                        0x0029
+             one                      0x004F
+             two                      0x0050
+             three                    0x0051
+             four                     0x004B
+             five                     0x004C
+             six                      0x004D
+             seven                    0x0047
+             eight                    0x0048
+             nine                     0x0049
+             ten                      0x0052
+             Red                      0x018E
+             Green                    0x018F
+             Yellow                   0x0190
+             Blue                     0x0191
+         Previous         0x019C
+         end codes
+
+    end remote
+
+### [Test the LIRCd]
+
+To test your current lircd configuration you can use the **irw** tool.
+
+### [Example .lircrc]
+
+[FILE] **`~/.lircrc`**
+
+    include ~/.lirc/irexec
+    include ~/.lirc/vlc
+    include ~/.lirc/audacious
+
+[FILE] **`~/.lirc/irexec`**
+
+    begin irexec
+    begin
+        remote = NOVA-TD
+        prog = irexec
+        button = TV
+        config = /usr/bin/vlc file://~/dvbt_sb_channels.conf &
+        mode = vlc
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = irexec
+        button = Home
+        config = /usr/bin/audacious
+        mode = audacious
+        repeat = 0
+        delay = 0
+    end
+    end irexec
+
+[FILE] **`~/.lirc/vlc`**
+
+    begin vlc
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Power
+        config = key-quit
+        mode = irexec
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Teletext
+        config = key-subtitle-track
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Previous
+        config = key-toggle-fullscreen
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Go
+        config = key-nav-activate
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ArrowUp
+        config = key-nav-up
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ArrowLeft
+        config = key-nav-left
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = OK
+        config = key-nav-activate
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ArrowRight
+        config = key-nav-right
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ArrowDown
+        config = key-nav-down
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = VolumeUp
+        config = key-vol-up
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = VolumeDown
+        config = key-vol-down
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Mute
+        config = key-vol-mute
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ChannelUp
+        config = key-next
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = ChannelDown
+        config = key-prev
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Rewind
+        config = key-slower
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = SkipBack
+        config = key-next
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Play
+        config = key-play
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Pause
+        config = key-pause
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Stop
+        config = key-stop
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = Fwdwind
+        config = key-faster
+        repeat = 0
+        delay = 0
+    end
+
+    begin
+        remote = NOVA-TD
+        prog = vlc
+        button = SkipFwd
+        config = key-nav-right
+        repeat = 0
+        delay = 0
+    end
+    end vlc
+
+[FILE] **`~/.lirc/audacious`**
+
+    begin audacious
+
+    begin
+         prog = audacious
+         button = Power
+         config = QUIT
+         repeat = 0
+         mode = irexec
+    end
+
+    begin
+         prog = audacious
+         button = Play
+         config = PLAY
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = Pause
+         config = PAUSE
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = Stop
+         config = STOP
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = SkipFwd
+         config = NEXT
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = SkipBack
+         config = PREV
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = Fwdwind
+         config = FWD
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = Rewind
+         config = BWD
+         repeat = 0
+    end
+
+    begin
+         prog = audacious
+         button = VolumeUp
+         config = VOL_UP
+         repeat = 1
+    end
+
+    begin
+         prog = audacious
+         button = VolumeDown
+         config = VOL_DOWN
+         repeat = 1
+    end
+
+    begin
+         prog = audacious
+         button = Mute
+         config = MUTE
+         repeat = 0
+    end
+
+    end audacious

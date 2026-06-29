@@ -1,0 +1,285 @@
+This article aims to give a basic foundation to start traffic shaping to improve responsiveness (ping, RTT) on internet links. Especially asymmetric links like DSL benefit from this. PING round trip time can be improved as much as 10x during heavy download/upload with this traffic shaping in place.
+
+## Contents
+
+-   [[1] [Installation]](#Installation)
+    -   [[1.1] [Prerequisites]](#Prerequisites)
+    -   [[1.2] [Kernel]](#Kernel)
+    -   [[1.3] [Iproute2]](#Iproute2)
+-   [[2] [Theory]](#Theory)
+-   [[3] [Note]](#Note)
+-   [[4] [Traffic Shaping Script]](#Traffic_Shaping_Script)
+    -   [[4.1] [Statistics]](#Statistics)
+-   [[5] [Some notes]](#Some_notes)
+-   [[6] [Excplicit Congestion Notification (ECN)]](#Excplicit_Congestion_Notification_.28ECN.29)
+-   [[7] [External resources]](#External_resources)
+
+## [Installation]
+
+### [Prerequisites]
+
+You need to configure your Kernel with QoS support. You should add HTB, FQ_CODEL and Ingress queuing disciplines as well as IFB (Intermediate Functional Block device) and U32 match support.
+
+### [Kernel]
+
+You need to activate the following kernel options:
+
+[KERNEL]
+
+    [*] Networking support  --->
+        Networking options  --->
+            [*] TCP/IP networking
+            ...
+            [*]   IP: advanced router
+            ...
+            [*]   IP: TCP syncookie support
+            ...
+            <*>   INET: socket monitoring interface
+            <M>     UDP: socket monitoring interface
+            ...
+            <M>   The IPv6 protocol  --->
+            ...
+            [*] Network packet filtering framework (Netfilter)  --->
+            [*] QoS and/or fair queueing  --->
+                <M>   Hierarchical Token Bucket (HTB)
+                <M>   Fair Queue Controlled Delay AQM (FQ_CODEL)
+                <M>   Ingress/classifier-action Qdisc
+                <M>   Universal 32bit comparisons w/ hashing (U32)
+                ...
+                [*]   Actions
+                      <M>   Redirecting and Mirroring
+
+    Device Drivers  --->
+        [*] Networking device support  --->
+            [*] Network core driver support
+                <M>     Intermediate Functional Block support
+
+If you have IPv6 support on your network or plan to use IPv6 tunnels, you may set IPv6 Protocol to \<M\>. You should also enable Netfilter options, which enables the use of iptables firewall.
+
+### [Iproute2]
+
+### [USE flags for] [sys-apps/iproute2](https://packages.gentoo.org/packages/sys-apps/iproute2) [[]] [kernel routing and traffic control utilities]
+
+  --------------------------------------------------------------- -----------------------------------------------------------------------------------------------------------------------
+  [`+iptables`](https://packages.gentoo.org/useflags/+iptables)   include support for iptables filtering
+  [`atm`](https://packages.gentoo.org/useflags/atm)               Enable Asynchronous Transfer Mode protocol support
+  [`berkdb`](https://packages.gentoo.org/useflags/berkdb)         build programs that use berkdb (just arpd)
+  [`bpf`](https://packages.gentoo.org/useflags/bpf)               Use dev-libs/libbpf
+  [`caps`](https://packages.gentoo.org/useflags/caps)             Use Linux capabilities library to control privilege
+  [`elf`](https://packages.gentoo.org/useflags/elf)               support loading eBPF programs from ELFs (e.g. LLVM\'s eBPF backend)
+  [`minimal`](https://packages.gentoo.org/useflags/minimal)       only install ip and tc programs, without eBPF support
+  [`nfs`](https://packages.gentoo.org/useflags/nfs)               Support RPC lookups via net-libs/libtirpc in ss
+  [`selinux`](https://packages.gentoo.org/useflags/selinux)       !!internal use only!! Security Enhanced Linux support, this must be set by the selinux profile or breakage will occur
+  --------------------------------------------------------------- -----------------------------------------------------------------------------------------------------------------------
+
+[Data provided by the [Gentoo Package Database](https://packages.gentoo.org) · Last update: 2026-05-04 19:07] [[More information about USE flags](/wiki/Handbook:AMD64/Working/USE)]
+
+Install [[[sys-apps/iproute2]](https://packages.gentoo.org/packages/sys-apps/iproute2)[]]:
+
+`root `[`#`]`emerge --ask iproute2`
+
+The iproute2 package installs the powerful tool called \"tc\". It is used to control and modify queuing and filters on network links.
+
+Lets begin with a little example:
+
+`root `[`#`]`tc qdisc show dev eth0`
+
+By default, the pfifo_fast queuing discipline is used by the Linux kernel. It should not be listed by \"tc qdisc show\".
+
+## [Theory]
+
+There are two modes of traffic shaping, INGRESS and EGRESS. INGRESS handles incoming traffic and EGRESS outgoing traffic. Linux does not support shaping/queuing on INGRESS, but only policing. Therefore IFB exists, which we can attach to the INGRESS queue while we can add any normal queuing like FQ_CODEL as EGRESS queue on the IFB device.
+
+The main reason for traffic shaping is that we cannot control the packet queues or prioritisation made by our ISP or in the external link. By limit our maximum bandwidth to 90% of our link speed we can make sure that any buffers (queues) that our ISP and our external link has will remain empty.
+
+FQ_CODEL is a queuing discipline that is based on AQM (Active Queue Management). It aims to create fair bandwidth for all flows, while attempting to minimise buffers (and hence delays).
+
+The INGRESS shaping below works like this:
+
+1.  Create ingress filter on external interface
+2.  Copy all incoming data to the IFB device
+3.  Create an EGRESS qdisc on the IFB device and limit the bandwidth to 90%
+4.  Attach the FQ_CODEL queuing discipline.
+
+## [Note]
+
+The original version of this page was wildly incorrect, in particular the ingress portion of the shaper didn\'t work at all. The protocol filter was ip only (no arp, no ipv6), the ifb0 device was not up, the default htb destination was to the direct, not fq_codel qdisc. Also the htb \"quantum\" is different and has a different purpose than the the fq_codel quantum - the htb quantum is there to lighten the cpu load of htb under higher rates, the fq_codel quantum is there to optimize for different packet sizes\....
+
+It was good to know everything that can go wrong on a fq_codel rate shaper\... \-- dtaht
+
+I generally recomend treating the ecn idea gently on anything but strictly controlled networks (like data centers)
+
+## [Traffic Shaping Script]
+
+It is important that you start by setting your upload and download speeds to about 90% of your maximum link speed. After you get satisfying results, you can generally try increasing your upload speed to 95% or higher, and twiddle with download speed. On some links you can get away with 95% too, on some, 85% is safer. ADSL has special framing problems which require usage of the htb STAB parameter (not shown here).
+
+You also need to load all modules beforehand.
+
+`root `[`#`]`modprobe ifb`
+
+`root `[`#`]`modprobe sch_fq_codel`
+
+`root `[`#`]`modprobe act_mirred`
+
+[CODE]
+
+    #!/bin/sh
+
+    ## Paths and definitions
+    tc=/sbin/tc
+    ext=eth0     # Change for your device!
+    ext_ingress=ifb0 # Use a unique ifb per rate limiter!
+                # Set these as per your provider's settings, at 90% to start with
+    ext_up=800kbit       # Max theoretical: for this example, up is 1024kbit
+    ext_down=7100kbit    # Max theoretical: for this example, down is 8192kbit
+    q=1514                  # HTB Quantum = 1500bytes IP + 14 bytes ethernet.
+                # Higher bandwidths may require a higher htb quantum. MEASURE.
+                # Some ADSL devices might require a stab setting.
+
+    quantum=300       # fq_codel quantum 300 gives a boost to interactive flows
+                # At higher bandwidths (50Mbit+) don't bother
+
+    modprobe ifb
+    modprobe sch_fq_codel
+    modprobe act_mirred
+
+    ethtool -K $ext tso off gso off gro off # Also turn of gro on ALL interfaces
+                                            # e.g ethtool -K eth1 gro off if you have eth1
+                        # some devices you may need to run these
+                        # commands independently
+
+    # Clear old queuing disciplines (qdisc) on the interfaces
+    $tc qdisc del dev $ext root
+    $tc qdisc del dev $ext ingress
+    $tc qdisc del dev $ext_ingress root
+    $tc qdisc del dev $ext_ingress ingress
+
+    #########
+    # INGRESS
+    #########
+
+    # Create ingress on external interface
+    $tc qdisc add dev $ext handle ffff: ingress
+
+    ifconfig $ext_ingress up # if the interace is not up bad things happen
+
+    # Forward all ingress traffic to the IFB device
+    $tc filter add dev $ext parent ffff: protocol all u32 match u32 0 0 action mirred egress redirect dev $ext_ingress
+
+    # Create an EGRESS filter on the IFB device
+    $tc qdisc add dev $ext_ingress root handle 1: htb default 11
+
+    # Add root class HTB with rate limiting
+
+    $tc class add dev $ext_ingress parent 1: classid 1:1 htb rate $ext_down
+    $tc class add dev $ext_ingress parent 1:1 classid 1:11 htb rate $ext_down prio 0 quantum $q
+
+    # Add FQ_CODEL qdisc with ECN support (if you want ecn)
+    $tc qdisc add dev $ext_ingress parent 1:11 fq_codel quantum $quantum ecn
+
+    #########
+    # EGRESS
+    #########
+    # Add FQ_CODEL to EGRESS on external interface
+    $tc qdisc add dev $ext root handle 1: htb default 11
+
+    # Add root class HTB with rate limiting
+    $tc class add dev $ext parent 1: classid 1:1 htb rate $ext_up
+    $tc class add dev $ext parent 1:1 classid 1:11 htb rate $ext_up prio 0 quantum $q
+
+    # Note: You can apply a packet limit here and on ingress if you are memory constrained - e.g
+    # for low bandwidths and machines with < 64MB of ram, limit 1000 is good, otherwise no point
+
+    # Add FQ_CODEL qdisc without ECN support - on egress it's generally better to just drop the packet
+    # but feel free to enable it if you want.
+
+    $tc qdisc add dev $ext parent 1:11 fq_codel quantum $quantum noecn
+
+#### [Statistics]
+
+To see if the new shaping is activated you should run some heavy traffic through it, and check your work. This example uses netperf. It is helpful to run multiple instances in both directions to really exercise things\.....
+
+`user `[`$`]`ping -c 70 somewhere > log & `
+
+`user `[`$`]`netperf -l 60 -H somewhere -t TCP_MAERTS &`
+
+`user `[`$`]`netperf -l 60 -H somewhere -t TCP_STREAM &`
+
+    ping -c 25 -H 172.21.2.1 & # watch your ping times go by. Should generally only increase by 10ms max
+    root@ida:~/gen# netperf -H 172.21.2.1 -t TCP_MAERTS
+    MIGRATED TCP MAERTS TEST from 0.0.0.0 (0.0.0.0) port 0 AF_INET to 172.21.2.1 () port 0 AF_INET : demo
+    Recv   Send    Send
+    Socket Socket  Message  Elapsed
+    Size   Size    Size     Time     Throughput
+    bytes  bytes   bytes    secs.    10^6bits/sec
+
+     87380  65536  65536    10.00       6.78
+    root@ida:~/gen# netperf -H 172.21.2.1 -t TCP_STREAM
+    MIGRATED TCP STREAM TEST from 0.0.0.0 (0.0.0.0) port 0 AF_INET to 172.21.2.1 () port 0 AF_INET : demo
+    Recv   Send    Send
+    Socket Socket  Message  Elapsed
+    Size   Size    Size     Time     Throughput
+    bytes  bytes   bytes    secs.    10^6bits/sec
+
+     87380  16384  16384    10.16       0.75
+
+Then you can check your work:
+
+`user `[`$`]`tc -s qdisc show dev eth0`
+
+    qdisc htb 1: root refcnt 2 r2q 10 default 11 direct_packets_stat 0
+     Sent 4211186 bytes 16165 pkt (dropped 0, overlimits 10147 requeues 0)
+     backlog 0b 0p requeues 0
+    qdisc fq_codel 801a: parent 1:11 limit 10240p flows 1024 quantum 300 target 5.0ms interval 100.0ms
+     Sent 4211186 bytes 16165 pkt (dropped 343, overlimits 0 requeues 0)
+     backlog 0b 0p requeues 0
+      maxpacket 1514 drop_overlimit 0 new_flow_count 2234 ecn_mark 0
+      new_flows_len 0 old_flows_len 18
+    qdisc ingress ffff: parent ffff:fff1 ----------------
+     Sent 24181003 bytes 19329 pkt (dropped 0, overlimits 0 requeues 0)
+     backlog 0b 0p requeues 0
+
+`user `[`$`]`tc -s filter show dev eth0 parent ffff:`
+
+    root@ida:~/gen# tc -s filter show dev eth0 parent ffff:
+    filter protocol all pref 49152 u32
+    filter protocol all pref 49152 u32 fh 800: ht divisor 1
+    filter protocol all pref 49152 u32 fh 800::800 order 2048 key ht 800 bkt 0 terminal flowid ???
+      match 00000000/00000000 at 0
+        action order 1: mirred (Egress Redirect to device ifb0) stolen
+        index 13 ref 1 bind 1 installed 517 sec used 0 sec
+        Action statistics:
+        Sent 34015624 bytes 29704 pkt (dropped 0, overlimits 0 requeues 0)
+        backlog 0b 0p requeues 0
+
+`user `[`$`]`tc -s -d class show dev ifb0`
+
+    qdisc htb 1: root refcnt 2 r2q 10 default 11 direct_packets_stat 1
+     Sent 23852231 bytes 19336 pkt (dropped 0, overlimits 25453 requeues 0)
+     backlog 0b 0p requeues 0
+    qdisc fq_codel 8019: parent 1:11 limit 10240p flows 1024 quantum 300 target 5.0ms interval 100.0ms ecn
+     Sent 23852120 bytes 19335 pkt (dropped 463, overlimits 0 requeues 0)
+     backlog 0b 0p requeues 0
+      maxpacket 1514 drop_overlimit 0 new_flow_count 2170 ecn_mark 0
+      new_flows_len 1 old_flows_len 1
+
+## [Some notes]
+
+If you see a maxpacket greater than 1514, you have some tso/gso/gro offload on on some interface. If you don\'t see ecn_marking, one side or another of your hosts doesn\'t have ecn on, or it\'s disabled as per this script.
+
+\
+
+## [][Excplicit Congestion Notification (ECN)]
+
+You can enable ECN (Explicit Congestion Notification) since FQ_CODEL will this to notify the internet hosts about congestions (bandwidth over limit), without actually dropping the packet.
+
+`root `[`#`]`sysctl -w net.ipv4.tcp_ecn=1`
+
+However usage of ecn over the wide internet is kind of dubious, so this script only enables it on ingress, and in these examples, ecn_mark=0 as it is not enabled on the other side of the tested connection.
+
+## [External resources]
+
+-   [information about FQ_CODEL qdisc](http://www.bufferbloat.net/projects/codel/wiki)
+-   [iptables and stateful firewall](http://www.gentoo-wiki.info/HOWTO_Iptables_and_stateful_firewalls)
+-   [iptables and stateful firewall](http://en.gentoo-wiki.com/wiki/Iptables_and_stateful_firewalls)
+-   [Van Jacobson and others on codel and bufferbloat](http://www.bufferbloat.net/projects/cerowrt/wiki/Bloat-videos)

@@ -1,0 +1,16 @@
+# pam_misc_drop_env(3)
+
+## Name
+pam_misc_drop_env — liberating a locally saved environment
+
+## DESCRIPTION
+
+This function is defined to complement the `pam_getenvlist(3)` function. It liberates the memory associated with `env`, *overwriting* with *0* all memory before `free()`ing it.
+
+## SEE ALSO
+
+`pam_getenvlist(3)`, `pam(8)`
+
+## STANDARDS
+
+The `pam_misc_drop_env` function is part of the `libpam_misc` Library and not defined in any standard.

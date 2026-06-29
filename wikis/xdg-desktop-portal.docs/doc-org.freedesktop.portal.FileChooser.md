@@ -1,0 +1,280 @@
+# File Chooser
+
+## Description
+
+File chooser portal
+
+The FileChooser portal allows sandboxed applications to ask the user for access to files outside the sandbox. The portal backend will present the user with a file chooser dialog.
+
+The selected files will be made accessible to the application (which may involve adding it to the [Documents portal](doc-org.freedesktop.portal.Documents.md#org-freedesktop-portal-documents)).
+
+Files added to the [Documents portal](doc-org.freedesktop.portal.Documents.md#org-freedesktop-portal-documents) by this portal stay accessible across sessions.
+
+This documentation describes version 4 of this interface.
+
+## Properties
+
+### org.freedesktop.portal.FileChooser:version
+
+    version readable u
+
+## Methods
+
+### org.freedesktop.portal.FileChooser.OpenFile
+
+    OpenFile (
+      IN parent_window s,
+      IN title s,
+      IN options a{sv},
+      OUT handle o
+    )
+
+Asks to open one or more files.
+
+Supported keys in the `options` vardict include:
+
+- `handle_token` (`s`)
+
+  A string that will be used as the last element of the `handle`. Must be a valid object path element. See the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) documentation for more information about the `handle`.
+
+- `accept_label` (`s`)
+
+  Label for the accept button. Mnemonic underlines are allowed.
+
+- `modal` (`b`)
+
+  Whether the dialog should be modal. Default is true.
+
+- `multiple` (`b`)
+
+  Whether multiple files can be selected or not. Default is single-selection.
+
+- `directory` (`b`)
+
+  Whether to select for folders instead of files. Default is to select files.
+
+  This option was added in version 3.
+
+- `filters` (`a(sa(us))`)
+
+  List of serialized file filters.
+
+  Each item in the array specifies a single filter to offer to the user.
+
+  The first string is a user-visible name for the filter. The `a(us)` specifies a list of filter strings, which can be either a glob-style pattern (indicated by 0) or a MIME type (indicated by 1) which allows wildcards for the subtype. Patterns are case-sensitive.
+
+  To match different capitalizations of, e.g. `'*.ico'`, use a pattern like: `'*.[iI][cC][oO]'`.
+
+  Example: `[('Images', [(0, '*.ico'), (1, 'image/png')]), ('Text', [(0, '*.txt')]), (1, 'audio/*')])]`
+
+  Note that filters are purely there to aid the user in making a useful selection. The portal may still allow the user to select files that don’t match any filter criteria, and applications must be prepared to handle that.
+
+- `current_filter` (`(sa(us))`)
+
+  Request that this filter be set by default at dialog creation. If the filters list is nonempty, it should match a filter in the list to set the default filter from the list. Alternatively, it may be specified when the list is empty to apply the filter unconditionally.
+
+- `choices` (`a(ssa(ss)s)`)
+
+  List of serialized combo boxes to add to the file chooser.
+
+  For each element, the first string is an ID that will be returned with the response, the second string is a user-visible label. The `a(ss)` is the list of choices, each being an ID and a user-visible label. The final string is the initial selection, or “”, to let the portal decide which choice will be initially selected. None of the strings, except for the initial selection, should be empty.
+
+  As a special case, passing an empty array for the list of choices indicates a boolean choice that is typically displayed as a check button, using “true” and “false” as the choices.
+
+  Example: `[('encoding', 'Encoding', [('utf8', 'Unicode (UTF-8)'), ('latin15', 'Western')], 'latin15'), ('reencode', 'Reencode', [], 'false')]`
+
+- `current_folder` (`ay`)
+
+  Suggested folder from which the files should be opened.
+
+  The byte array contains a path in the same encoding as the file system, and it’s expected to be terminated by a nul byte.
+
+  If the path points to a location in the document storage, it will be replaced with the path to the location on the host.
+
+  The portal implementation is free to ignore this option.
+
+The following results get returned via the [org.freedesktop.portal.Request::Response](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request-response) signal:
+
+- `uris` (`as`)
+
+  An array of strings containing the uris of the selected files. All URIs have the `file://` scheme.
+
+- `choices` (`a(ss)`)
+
+  An array of pairs of strings, the first string being the ID of a combobox that was passed into this call, the second string being the selected option.
+
+  Example: `[('encoding', 'utf8'), ('reencode', 'true')]`
+
+- `current_filter` (`(sa(us))`)
+
+  The filter that was selected. This may match a filter in the filter list or another filter that was applied unconditionally.
+
+parent_window  
+Identifier for the application window, see [Window Identifiers](window-identifiers.md)
+
+title  
+Title for the file chooser dialog
+
+options  
+Vardict with optional further information
+
+handle  
+Object path for the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) object representing this call
+
+### org.freedesktop.portal.FileChooser.SaveFile
+
+    SaveFile (
+      IN parent_window s,
+      IN title s,
+      IN options a{sv},
+      OUT handle o
+    )
+
+Asks for a location to save a file.
+
+Supported keys in the `options` vardict include:
+
+- `handle_token` (`s`)
+
+  A string that will be used as the last element of the `handle`. Must be a valid object path element. See the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) documentation for more information about the `handle`.
+
+- `accept_label` (`s`)
+
+  Label for the accept button. Mnemonic underlines are allowed.
+
+- `modal` (`b`)
+
+  Whether the dialog should be modal. Default is yes.
+
+- `filters` (`a(sa(us))`)
+
+  List of serialized file filters.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+- `current_filter` (`(sa(us))`)
+
+  Request that this filter be set by default at dialog creation.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+- `choices` (`a(ssa(ss)s)`)
+
+  List of serialized combo boxes.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+- `current_name` (`s`)
+
+  Suggested name of the file.
+
+- `current_folder` (`ay`)
+
+  Suggested folder in which the file should be saved. The byte array contains a path in the same encoding as the file system, and it’s expected to be terminated by a nul byte.
+
+  If the path points to a location in the document storage, it will be replaced with the path to the location on the host.
+
+  The portal implementation is free to ignore this option.
+
+- `current_file` (`ay`)
+
+  The current file (when saving an existing file), in the same encoding as the file system. The byte array is expected to be terminated by a nul byte.
+
+The following results get returned via the [org.freedesktop.portal.Request::Response](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request-response) signal:
+
+- `uris` (`as`)
+
+  An array of strings containing the uri of the selected file. It has exactly one element. All URIs have the `file://` scheme.
+
+- `choices` (`a(ss)`)
+
+  An array of pairs of strings, corresponding to the passed-in choices.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+- `current_filter` (`(sa(us))`)
+
+  The filter that was selected.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+parent_window  
+Identifier for the application window, see [Window Identifiers](window-identifiers.md)
+
+title  
+Title for the file chooser dialog
+
+options  
+Vardict with optional further information
+
+handle  
+Object path for the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) object representing this call
+
+### org.freedesktop.portal.FileChooser.SaveFiles
+
+    SaveFiles (
+      IN parent_window s,
+      IN title s,
+      IN options a{sv},
+      OUT handle o
+    )
+
+Asks for a folder as a location to save one or more files. The names of the files will be used as-is and appended to the selected folder’s path in the list of returned files. If the selected folder already contains a file with one of the given names, the portal may prompt or take some other action to construct a unique file name and return that instead.
+
+Supported keys in the `options` vardict include:
+
+- `handle_token` (`s`)
+
+  A string that will be used as the last element of the `handle`. Must be a valid object path element. See the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) documentation for more information about the `handle`.
+
+- `accept_label` (`s`)
+
+  Label for the accept button. Mnemonic underlines are allowed.
+
+- `modal` (`b`)
+
+  Whether the dialog should be modal. Default is yes.
+
+- `choices` (`a(ssa(ss)s)`)
+
+  List of serialized combo boxes.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+- `current_folder` (`ay`)
+
+  Suggested folder in which the files should be saved. The byte array contains a path in the same encoding as the file system, and it’s expected to be terminated by a nul byte.
+
+  If the path points to a location in the document storage, it will be replaced with the path to the location on the host.
+
+  The portal implementation is free to ignore this option.
+
+- `files` (`aay`)
+
+  An array of file names, using the same encoding as the file system, to be saved. Each byte array is expected to be terminated by a nul
+
+The following results get returned via the [org.freedesktop.portal.Request::Response](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request-response) signal:
+
+- `uris` (`as`)
+
+  An array of strings containing the uri corresponding to each file given by `options`, in the same order. Note that the file names may have changed, for example if a file with the same name in the selected folder already exists.
+
+  All URIs have the `file://` scheme.
+
+- `choices` (`a(ss)`)
+
+  An array of pairs of strings, corresponding to the passed-in choices.
+
+  See [org.freedesktop.portal.FileChooser.OpenFile](#org-freedesktop-portal-filechooser-openfile) for details.
+
+parent_window  
+Identifier for the application window, see [Window Identifiers](window-identifiers.md)
+
+title  
+Title for the file chooser dialog
+
+options  
+Vardict with optional further information
+
+handle  
+Object path for the [Request](doc-org.freedesktop.portal.Request.md#org-freedesktop-portal-request) object representing this call

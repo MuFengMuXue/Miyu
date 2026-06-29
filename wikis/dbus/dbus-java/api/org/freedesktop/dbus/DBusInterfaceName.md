@@ -1,0 +1,37 @@
+## org.freedesktop.dbus Annotation Type DBusInterfaceName
+
+    @Retention(value=RUNTIME)
+    @Target(value=TYPE)
+    public @interface DBusInterfaceName
+
+Force the interface name to be different to the Java class name.
+
+<table data-border="1" width="100%" data-cellpadding="3" data-cellspacing="0" data-summary="">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="TableHeadingColor" data-bgcolor="#CCCCFF">
+<th colspan="2" style="text-align: left;"><strong>Required Element Summary</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="TableRowColor" data-bgcolor="white">
+<td style="text-align: right;" data-valign="top" width="1%"><code> </code><code>String</code></td>
+<td><strong><code>value</code></strong><br />
+          The replacement interface name.</td>
+</tr>
+</tbody>
+</table>
+
+ 
+
+| **Element Detail** |
+|--------------------|
+
+### value
+
+    public abstract String value
+
+The replacement interface name.

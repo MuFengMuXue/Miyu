@@ -1,0 +1,199 @@
+|                      |     |     |     |     |
+|:---------------------|-----|-----|-----|-----|
+| Top  \|  Description |     |     |     |     |
+
+<table width="100%">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<tbody>
+<tr>
+<td data-valign="top"><h2 id="dbusgmethod">DBusGMethod</h2>
+<p>DBusGMethod — GMethod Info &amp; Invocation</p></td>
+<td class="gallery_image" style="text-align: right;" data-valign="top"></td>
+</tr>
+</tbody>
+</table>
+
+## Stability Level
+
+Stable, unless otherwise indicated
+
+## Functions
+
+|                |                               |
+|----------------|-------------------------------|
+| gchar \*       | dbus_g_method_get_sender ()   |
+| DBusMessage \* | dbus_g_method_get_reply ()    |
+| void           | dbus_g_method_send_reply ()   |
+| void           | dbus_g_method_return ()       |
+| void           | dbus_g_method_return_error () |
+
+## Types and Values
+
+|        |                       |
+|--------|-----------------------|
+| struct | DBusGMethodInfo       |
+|        | DBusGMethodInvocation |
+
+## Includes
+
+``` synopsis
+#include <dbus/dbus-glib.h>
+```
+
+## Description
+
+These types are used to call methods on GObject objects.
+
+## Functions
+
+### dbus_g_method_get_sender ()
+
+``` programlisting
+gchar *
+dbus_g_method_get_sender (DBusGMethodInvocation *context);
+```
+
+`dbus_g_method_get_sender` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is `g_dbus_method_invocation_get_sender()`.
+
+Get the sender of a message so we can send a "reply" later (i.e. send a message directly to a service which invoked the method at a later time).
+
+#### Parameters
+
+|         |                    |     |
+|---------|--------------------|-----|
+| context | the method context |     |
+
+#### Returns
+
+the unique name of the sender. It is up to the caller to free the returned string.
+
+### dbus_g_method_get_reply ()
+
+``` programlisting
+DBusMessage *
+dbus_g_method_get_reply (DBusGMethodInvocation *context);
+```
+
+`dbus_g_method_get_reply` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is `g_dbus_method_invocation_return_value()`.
+
+Get the reply message to append reply values Used as a sidedoor when you can't generate dbus values of the correct type due to glib binding limitations
+
+#### Parameters
+
+|         |                    |     |
+|---------|--------------------|-----|
+| context | the method context |     |
+
+#### Returns
+
+a DBusMessage with the reply
+
+### dbus_g_method_send_reply ()
+
+``` programlisting
+void
+dbus_g_method_send_reply (DBusGMethodInvocation *context,
+                          DBusMessage *reply);
+```
+
+`dbus_g_method_send_reply` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is `g_dbus_method_invocation_return_value()`.
+
+Send a manually created reply message.
+
+Used as a sidedoor when you can't generate dbus values of the correct type due to glib binding limitations
+
+#### Parameters
+
+|         |                                     |     |
+|---------|-------------------------------------|-----|
+| context | the method context                  |     |
+| reply   | the reply message, will be unreffed |     |
+
+### dbus_g_method_return ()
+
+``` programlisting
+void
+dbus_g_method_return (DBusGMethodInvocation *context,
+                      ...);
+```
+
+`dbus_g_method_return` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is `g_dbus_method_invocation_return_value()`.
+
+Send a return message for a given method invocation, with arguments. This function also frees the sending context.
+
+#### Parameters
+
+|  |  |  |
+|----|----|----|
+| context | the method context |   |
+| ... | zero or more values to return from the method, with their number and types given by its DBusGObjectInfo |   |
+
+### dbus_g_method_return_error ()
+
+``` programlisting
+void
+dbus_g_method_return_error (DBusGMethodInvocation *context,
+                            const GError *error);
+```
+
+`dbus_g_method_return_error` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is `g_dbus_method_invocation_return_gerror()`.
+
+Send a error message for a given method invocation. This function also frees the sending context.
+
+#### Parameters
+
+|         |                    |     |
+|---------|--------------------|-----|
+| context | the method context |     |
+| error   | the error to send  |     |
+
+## Types and Values
+
+### struct DBusGMethodInfo
+
+``` programlisting
+struct DBusGMethodInfo {
+  GCallback                 function;    
+  GClosureMarshal           marshaller;  
+  int                       data_offset; 
+};
+```
+
+Object typically generated by dbus-binding-tool that stores a mapping from introspection data to a function pointer for a C method to be invoked.
+
+#### Members
+
+|                                 |                                    |     |
+|---------------------------------|------------------------------------|-----|
+| GCallback *`function`*;         | C method to invoke                 |     |
+| GClosureMarshal *`marshaller`*; | Marshaller to invoke method        |     |
+| int *`data_offset`*;            | Offset into the introspection data |     |
+
+### DBusGMethodInvocation
+
+``` programlisting
+typedef struct _DBusGMethodInvocation DBusGMethodInvocation;
+```
+
+`DBusGMethodInvocation` is deprecated and should not be used in newly-written code.
+
+New code should use GDBus instead. The closest equivalent is GDBusMethodInvocation.
+
+The context of an asynchronous method call. See `dbus_g_method_return()` and `dbus_g_method_return_error()`.
+
+## See Also
+
+DBusGMessage

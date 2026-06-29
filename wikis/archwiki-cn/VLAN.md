@@ -1,0 +1,141 @@
+[![](../File:Tango-view-refresh-red.png)](<../File:Tango-view-refresh-red.png>)**本文或本节内容已经过时。**
+
+**原因：** 请提供模板的第一个位置参数以概括原因。 (在[Talk:VLAN](<../zh-cn/Talk:VLAN.html>)讨论)
+
+相关文章
+
+  * [Network Configuration](<../zh-cn/Network_Configuration.html> "Network Configuration")
+  * [systemd-networkd](<../zh-cn/Systemd-networkd.html> "Systemd-networkd")
+  * [Netctl](<../zh-cn/Netctl.html> "Netctl")
+
+**翻译状态：**
+
+  * 本文（或部分内容）译自 [VLAN](<https://wiki.archlinux.org/title/VLAN> "arch:VLAN")，最近一次同步于 2015-04-28，若英文版本有所[更改](<https://wiki.archlinux.org/title/VLAN?diff=0&oldid=371497>)，则您可以帮助同步与[翻译](<../zh-cn/Help:%E7%BF%BB%E8%AF%91.html> "Help:翻译")更改的内容。
+  * 您可以在 [ArchWiki 的对应页面](<https://wiki.archlinux.org/title/VLAN_\(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87\)?action=history>)找到本文翻译的**原始** 修订历史。
+  * 本文可能与英文原文存在出入。
+
+[![](../File:Tango-preferences-desktop-locale.png)](<../File:Tango-preferences-desktop-locale.png>)**本文或本节需要[翻译](<../Project:Contributing_\(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87\).html#%E7%BF%BB%E8%AF%91> "Project:Contributing \(简体中文\)")。要贡献翻译，请访问[简体中文翻译团队](<../Project:%E7%BF%BB%E8%AF%91%E5%9B%A2%E9%98%9F.html> "Project:翻译团队")。**
+
+**附注：** 请提供模板的第一个位置参数以更详细的指示。（在 [Talk:VLAN#](<../zh-cn/Talk:VLAN.html>) 中讨论）
+
+Virtual LANs give you the ability to sub-divide a LAN. Linux can accept **VLAN** tagged traffic and presents each **VLAN ID** as a different network interface (eg: `eth0.100` for **VLAN ID** `100`) 
+
+本文介绍如何通过 [iproute2](<https://archlinux.org/packages/?name=iproute2>)包 和 [systemd-networkd](<../zh-cn/Systemd-networkd.html> "Systemd-networkd") 或 [netctl](<../zh-cn/Netctl.html> "Netctl") 配置 VLAN 。 
+
+##  配置
+
+此前 Arch Linux 用 `vconfig` 命令设置 VLANs ，该命令已被 `ip` 命令取代。请确认 [iproute2](<https://archlinux.org/packages/?name=iproute2>)包 已安装。 
+
+下面的范例假定**网口** 是 `eth0`，**名字** 是 `eth0.100` ，**vlan id** 是 `100`。 
+
+###  创建 VLAN 设备
+
+用下列命令添加 VLAN 网口： 
+    
+    # ip link add link eth0 name eth0.100 type vlan id 100
+    
+执行 `ip link` 命令确认 VLAN 已创建。 
+
+这个 VLAN 网口就像一个普通的物理网口，所有流经这个网口的数据包将被加上 VLAN tag 并流经它关联的物理网口（本例中的 `eth0`）。仅配置为相同 VLAN 的设备可接收这些数据包，否则将被丢弃。 Using a **name** like `eth0.100` is just convention and not enforced; you can alternatively use `eth0_100` or something descriptive like `IPTV`. To see the VLAN ID on an interface, in case you used an unconventional name: 
+    
+    # ip -d link show eth0.100
+    
+The `-d` flag shows full details on an interface: 
+    
+    # ip -d addr show
+    4: eno1.100@eno1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+       link/ether 96:4a:9c:84:36:51 brd ff:ff:ff:ff:ff:ff promiscuity 0 
+       **vlan protocol 802.1Q id 100 <REORDER_HDR>** 
+       inet6 fe80::944a:9cff:fe84:3651/64 scope link 
+          valid_lft forever preferred_lft forever
+    
+###  添加 IP
+
+Now add an IPv4 address to the just created vlan link, and activate the link: 
+    
+    # ip addr add 192.168.100.1/24 brd 192.168.100.255 dev eth0.100
+    # ip link set dev eth0.100 up
+    
+###  关闭设备
+
+To cleanly shutdown the setting before you remove the link, you can do: 
+    
+    # ip link set dev eth0.100 down
+
+###  移除设备
+
+ex Removing a VLAN interface is significantly less convoluted 
+    
+    # ip link delete eth0.100
+
+###  开机启动
+
+#### systemd-networkd
+
+Use the following configuration files: 
+    
+    /etc/systemd/network/_eno1_.network
+    
+    [Match]
+    Name=eno1
+    
+    [Network]
+    DHCP=v4
+    VLAN=eno1.100
+    VLAN=eno1.200
+    
+    /etc/systemd/network/'eno1.100 _.netdev_
+    
+    [Netdev]
+    Name=eno1.100
+    Kind=vlan
+    
+    [VLAN]
+    Id=100
+    
+    /etc/systemd/network/'eno1.200 _.netdev_
+    
+    [Netdev]
+    Name=eno1.200
+    Kind=vlan
+    
+    [VLAN]
+    Id=200
+    
+Then [enable](<../zh-cn/Help:%E9%98%85%E8%AF%BB.html#%E6%8E%A7%E5%88%B6_systemd_%E5%8D%95%E5%85%83> "Enable") `systemd-networkd.service`. See [systemd-networkd](<../zh-cn/Systemd-networkd.html> "Systemd-networkd") for details. 
+
+#### netctl
+
+You can use [netctl](<../zh-cn/Netctl.html> "Netctl") for this purpose, see the self-explanatory example profiles in {{ic|/etc/netctl/examples/vlan-{dhcp,static} }}. 
+
+##  排错
+
+###  udev 重命名虚拟设备
+
+An annoyance is that [udev](<../zh-cn/Udev.html> "Udev") may try to rename virtual devices as they are added, thus ignoring the **name** configured for them (in this case `eth0.100`). 
+
+For instance, if the following commands are issued: 
+    
+    # ip link add link eth0 name eth0.100 type vlan id 100
+    # ip link show 
+    
+This could generate the following output: 
+    
+    1: lo: <LOOPBACK,UP,LOWER_UP> mtu 16436 qdisc noqueue state UNKNOWN 
+        link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP qlen 1000
+        link/ether aa:bb:cc:dd:ee:ff brd ff:ff:ff:ff:ff:ff
+    3: rename1@eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state DOWN 
+        link/ether aa:bb:cc:dd:ee:ff brd ff:ff:ff:ff:ff:ff
+    
+**udev** has ignored the configured virtual interface name `eth0.100` and autonamed it **rename1**. 
+
+The solution is to edit `/etc/udev/rules.d/network_persistent.rules` and append **DRIVERS=="?*"** to the end of the physical interface's configuration line. 
+
+For example, for the interface **aa:bb:cc:dd:ee:ff** (eth0): 
+    
+    /etc/udev/rules.d/network_persistent.rules
+    
+    SUBSYSTEM=="net", ATTR{address}=="aa:bb:cc:dd:ee:ff", NAME="eth0", DRIVERS=="?*"
+    
+A reboot should mean that VLANs configure correctly with the names assigned to them. 

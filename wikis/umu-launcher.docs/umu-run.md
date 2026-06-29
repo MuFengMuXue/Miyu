@@ -1,0 +1,188 @@
+# NAME
+
+umu-run - Unified Launcher for Windows Games on Linux
+
+# SYNOPSIS
+
+*umu-run* [_FILE_]
+
+*umu-run* [_FILE_ [_ARG_...]]
+
+*umu-run* [_winetricks_ [_ARG_...]]
+
+*umu-run* *--config* [_FILE_]
+
+*umu-run* *--help*
+
+# POSITIONAL ARGUMENTS
+
+*winetricks*
+	Run *winetricks* verbs (Requires GE-Proton or UMU-Proton).
+
+	See *winetricks*(1) for more info or below for an example.
+
+# OPTIONS
+
+*-h, --help*
+	Show this help message.
+
+*--config* <config>
+	Path to TOML configuration file (Requires Python 3.11+).
+
+	See *umu*(5) for more info and examples.
+
+# DESCRIPTION
+
+The Unified Launcher for Windows Games on Linux (umu) was created to make
+Valve's *Proton* and the *protonfixes* project accessible outside the
+Steam client, providing a standardized way for other clients (e.g., Lutris,
+Heroic Games Launcher, Bottles, or Rare) to run games via Proton and configure
+WINE prefixes.
+
+As a result, clients:
+- No longer require Steam or Steam binaries to be installed
+- Can contribute and automatically benefit from protonfixes
+- Can run games through Proton as it were a native Steam game
+- Can reference a unified online database of game fixes (protonfixes)
+
+You can run umu directly from a terminal emulator, or through your launcher of
+choice if supported.
+
+# EXAMPLES
+
+*Example 1. Run a game*
+
+```
+$ WINEPREFIX=$HOME/.wine PROTONPATH=$HOME/GE-Proton9-4 umu-run foo.exe
+```
+
+*Example 2. Run a game and apply a specific protonfix*
+
+```
+# Applies the Star Citizen fix to the current WINE prefix
+$ WINEPREFIX=$HOME/.wine GAMEID=umu-starcitizen PROTONPATH=$HOME/GE-Proton9-4 umu-run foo.exe
+```
+
+*Example 3. Run a game via a configuration file*
+
+```
+# config.toml
+[umu]
+prefix = "$HOME/.wine"
+proton = "$HOME/GE-Proton30"
+game_id = "0"
+exe = "$HOME/foo.exe"
+launch_args = ["-opengl", "-SkipBuildPatchPrereq"]
+store = "gog"
+$ umu-run --config config.toml
+```
+
+*Example 4. Create a umu WINE prefix*
+
+```
+$ WINEPREFIX=$HOME/foo PROTONPATH=$HOME/GE-Proton9-4 umu-run ""
+```
+
+*Example 5. Run a game and automatically set Proton*
+
+```
+# Uses the latest UMU-Proton and automatically removes old UMU-Proton builds
+$ WINEPREFIX=$HOME/.wine umu-run foo.exe
+```
+
+*Example 6. Run a game, automatically set Proton, and create a WINE prefix*
+
+```
+# Creates the prefix as $HOME/Games/umu/umu-default and uses the latest UMU-Proton
+$ umu-run foo.exe
+```
+
+*Example 7. Run a game and explicitly set a valid Proton verb*
+
+```
+$ WINEPREFIX=$HOME/.wine GAMEID=0 PROTONPATH=$HOME/GE-Proton9-4 PROTON_VERB=waitforexitandrun umu-run foo.exe
+```
+
+*Example 8. Run a game and enable debug logs*
+
+```
+$ UMU_LOG=debug WINEPREFIX=$HOME/.wine PROTONPATH=$HOME/GE-Proton9-4 umu-run foo.exe
+```
+
+*Example 9. Run a game and set a Proton by its version name*
+
+```
+# Checks for GE-Proton9-1 at $HOME/.local/share/Steam/compatibilitytools.d
+$ WINEPREFIX=$HOME/.wine PROTONPATH=GE-Proton9-1 umu-run foo.exe
+```
+
+*Example 10. Run a game and automatically use the latest GE-Proton*
+
+```
+$ WINEPREFIX=$HOME/.wine PROTONPATH=GE-Proton umu-run foo.exe
+```
+
+*Example 11. Run winetricks verbs*
+
+```
+$ PROTONPATH=GE-Proton umu-run winetricks quartz wmp11 qasf
+```
+
+*Example 12. Run a game, but do not apply protonfixes*
+
+```
+$ GAMEID=umu-genshin PROTONPATH=GE-Proton PROTONFIXES_DISABLE=1 umu-run foo.exe
+```
+
+# ENVIRONMENT VARIABLES
+
+_GAMEID_
+	Optional. Can be an arbitrary value or a valid id in the *umu-database*.
+	If unset, defaults to _umu-default_ (does not apply any fixes automatically).
+
+_PROTONPATH_
+	Optional. Path to a Proton directory, version name (e.g., GE-Proton9-5) or
+	codename (e.g., GE-Proton).
+
+	Otherwise, defaults to using UMU-Proton.
+
+	Valid codenames include: _GE-Proton_
+
+_WINEPREFIX_
+	Optional. Path to a WINE prefix directory. Otherwise, defaults to _$HOME/Games/umu/$GAMEID_.
+	If no _GAMEID_ is set, defaults to _$HOME/Games/umu/umu-default_.
+
+_UMU_LOG_
+	Optional. Enables debug logs for the launcher.
+
+	Set _1_ to enable all logs.
+
+_STORE_
+	Optional. Can be an arbitrary value or a valid store id in the umu-database.
+
+_PROTON_VERB_
+	Optional. Must be a valid Proton verb. Otherwise, defaults to _waitforexitandrun_.
+
+_UMU_RUNTIME_UPDATE_
+	Optional. Disables automatic updates to the *Steam Linux Runtime*.
+
+	Set _0_ to disable updates.
+
+_UMU_NO_PROTON_
+	Optional. Runs the executable natively within the Steam Linux Runtime. Intended for native Linux games.
+
+	Set _1_ to run the executable natively within the SLR.
+
+_UMU_HTTP_TIMEOUT_
+	Optional. Sets the timeout, in seconds, for each HTTP request. Otherwise, defaults to _5_.
+
+	Set _0_ to disable timeouts for HTTP requests. Set a positive integer to override the default.
+
+_UMU_HTTP_RETRIES_
+	Optional. Number of times to retry possibly spurious network errors. Otherwise, defaults to _3_.
+
+	Set _0_ to disable retries for HTTP requests. Set a positive integer to override the default.
+
+# SEE ALSO
+
+_umu_(5), _winetricks_(1)
