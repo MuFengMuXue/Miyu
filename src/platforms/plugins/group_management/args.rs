@@ -187,7 +187,8 @@ pub(in crate::platforms::plugins::group_management) fn history_query_schema() ->
             "keyword": { "type": "string" },
             "min_ban_count": { "type": "integer", "minimum": 1, "description": "仅 stats 视图：过滤禁言次数下限。" },
             "sort_by": { "type": "string", "enum": ["time", "ban_count", "kick_count", "total_duration", "last_action_at"], "description": "events 视图按时间排；stats 视图默认按 ban_count。" },
-            "sort_order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" },
+            // sort_order 已从 schema 撤下(08-21 token-diet):默认 desc 够用,
+            // 处理器仍兼容解析 asc。
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
             "group_id": { "type": "string", "description": "跨群查询的目标群号；仅 Miyu 管理员可用，群聊之外调用时必填。" }
         },

@@ -307,6 +307,8 @@ impl PlatformPlugin for RealContextPlugin {
                 context.clone(),
                 settings.group_member_search_max_results,
             );
+        } else {
+            message_history::register_avatar_tool(registry, context.clone());
         }
         affection::register_query_tool(registry, context.clone(), settings);
         Ok(())

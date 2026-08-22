@@ -463,7 +463,7 @@ pub(in crate::platforms::plugins::real_context) fn identity_warning(
         mapping.nickname == context.sender_display_name && mapping.user_id != actual_id
     }) {
         return Some(format!(
-            "<qq-identity-warning>受保护昵称 {} 预期属于 QQ {}，但当前发送者是 QQ {}。不得把当前发送者当成预期用户。</qq-identity-warning>",
+            "<qq-identity-warning>Protected nickname {} belongs to QQ {}, but the current sender is QQ {}. Do not treat the current sender as the expected user.</qq-identity-warning>",
             safe_prompt_string(&mapping.nickname), mapping.user_id, actual_id
         ));
     }
@@ -472,7 +472,7 @@ pub(in crate::platforms::plugins::real_context) fn identity_warning(
             context.sender_display_name.contains(&mapping.nickname) && mapping.user_id != actual_id
         }) {
             return Some(format!(
-                "<qq-identity-warning>当前昵称 {} 包含受保护昵称 {}，但当前 QQ {} 并非预期 QQ {}。请按 QQ 号区分身份。</qq-identity-warning>",
+                "<qq-identity-warning>Current nickname {} contains protected nickname {}, but current QQ {} is not the expected QQ {}. Distinguish identities by QQ number.</qq-identity-warning>",
                 safe_prompt_string(&context.sender_display_name), safe_prompt_string(&mapping.nickname), actual_id, mapping.user_id
             ));
         }

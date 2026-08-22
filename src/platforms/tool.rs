@@ -77,7 +77,7 @@ pub(crate) fn register(registry: &mut ToolRegistry, context: Arc<PlatformTurnCon
     registry.register(
         ToolSpec::new(
             "send_message_to_user",
-            "Send text, local images, or local files to the current messaging-platform conversation. Generated images are not delivered automatically — send them with this tool. This tool cannot target another conversation.",
+            "Send text, local images, or local files to the current messaging-platform conversation.",
             parameters,
             move |arguments| {
                 let context = context.clone();
@@ -93,7 +93,7 @@ fn register_mention(registry: &mut ToolRegistry, context: Arc<PlatformTurnContex
     registry.register(
         ToolSpec::new(
             "qq_mention_users",
-            "Make Miyu's next outgoing message in the current QQ group natively @ one or more members. Provide exact QQ IDs; use get_group_members_info first when only names are known. These explicit targets replace the automatic reply mention but preserve its message-quote behavior. This tool does not send a separate message.",
+            "Natively @-mention one or more members in the next outgoing message of this group chat. Provide exact QQ ids; use get_group_members_info first when only names are known. This tool does not send a separate message.",
             json!({
                 "type": "object",
                 "properties": {
@@ -214,12 +214,15 @@ async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<Str
         // 附件门槛防的是把宿主上任意文件发给陌生人;Miyu 自己刚生成的图不在
         // 此列——平台生图已改为模型显式发送(08-20 裁定),没有这条豁免,
         // 非管理员触发的画图请求就永远发不出结果。
+        // 08-22:get_avatar 改为"只下载不投递",发送权交还模型——头像缓存
+        // 目录与生图目录同为 Miyu 自产内容,一并豁免。
+        let avatar_dir = context.paths.cache_dir.join("qq-avatars");
         let exempt = files.is_empty()
             && !image_paths.is_empty()
-            && all_within_generated_dir(
+            && (all_within_generated_dir(
                 &context.config.plugins.image_generation.output_dir,
                 &image_paths,
-            );
+            ) || all_within_root(&avatar_dir, &image_paths));
         if !exempt {
             bail!("local attachments require an authorized platform administrator");
         }
@@ -301,6 +304,18 @@ fn array(arguments: &Value, key: &str) -> Result<Vec<Value>> {
 
 /// 全部路径都落在生图输出目录内(符号链接经 canonicalize 展开,防目录
 /// 逃逸)。目录不存在或路径解析失败一律按不豁免处理。
+fn all_within_root(root: &std::path::Path, paths: &[PathBuf]) -> bool {
+    let Ok(root) = root.canonicalize() else {
+        return false;
+    };
+    !paths.is_empty()
+        && paths.iter().all(|path| {
+            path.canonicalize()
+                .map(|canonical| canonical.starts_with(&root))
+                .unwrap_or(false)
+        })
+}
+
 fn all_within_generated_dir(output_dir: &str, paths: &[PathBuf]) -> bool {
     let expanded = if let Some(rest) = output_dir.strip_prefix("~/") {
         match std::env::var_os("HOME") {
@@ -355,18 +370,8 @@ fn register_usage_query(registry: &mut ToolRegistry, context: Arc<PlatformTurnCo
     registry.register(
         ToolSpec::new(
             "query_token_usage",
-            "Query Miyu's token usage statistics: totals, request count, cache hit rate, and the per-source (agent / messaging platforms) model breakdown. range: 1d (rolling 24h, default) / 7d / 30d / all.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "range": {
-                        "type": "string",
-                        "enum": ["1d", "7d", "30d", "all"],
-                        "description": "Time range, defaults to 1d (rolling 24h)."
-                    }
-                },
-                "additionalProperties": false
-            }),
+            crate::tools::usage_query::DESCRIPTION,
+            crate::tools::usage_query::parameters(),
             move |arguments| {
                 let context = context.clone();
                 async move { query_token_usage(arguments, context).await }

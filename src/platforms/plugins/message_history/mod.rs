@@ -100,15 +100,11 @@ fn sqlite_file(path: &std::path::Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-pub(super) struct MessageHistoryPlugin {
-    delete_confirmations: tools::DeleteConfirmations,
-}
+pub(super) struct MessageHistoryPlugin {}
 
 impl MessageHistoryPlugin {
     pub(super) fn new() -> Self {
-        Self {
-            delete_confirmations: tools::DeleteConfirmations::default(),
-        }
+        Self {}
     }
 
     fn settings(context: &PlatformTurnContext) -> Result<Arc<QqMessageHistoryPluginSettings>> {
@@ -259,7 +255,6 @@ impl PlatformPlugin for MessageHistoryPlugin {
             context.clone(),
             store_for_paths(&context.paths),
             Self::settings(&context)?,
-            self.delete_confirmations.clone(),
         );
         Ok(())
     }
@@ -370,6 +365,15 @@ pub(super) fn register_group_member_tool(
     maximum: usize,
 ) {
     tools::register_group_members(registry, context.clone(), maximum);
+    tools::register_avatar(registry, context);
+}
+
+/// 私聊等非群会话也要有 get_avatar(08-22 用户实测:私聊里模型答"没有这个
+/// 工具")。群成员搜索仍是群聊专属,头像不是。
+pub(super) fn register_avatar_tool(
+    registry: &mut ToolRegistry,
+    context: Arc<PlatformTurnContext>,
+) {
     tools::register_avatar(registry, context);
 }
 
