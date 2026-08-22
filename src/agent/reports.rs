@@ -236,6 +236,15 @@ pub(in crate::agent) fn tool_event_name(name: &str, arguments: &str) -> String {
             .unwrap_or_else(|| name.to_string()),
         // use_meme 有两个动作:show 要静默(图片自己会打出来),search 要照常
         // 显示摘要。渲染层只拿得到名字,所以把 action 编进事件名。
+        // divine 四种占法都叫"占卜"毫无区分度(08-22 用户点名):method 编进
+        // 事件名,渲染层按 divine:zhouyi/tarot/fortune/dice 取各自的显示名。
+        "divine" => args
+            .get("method")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|method| !method.is_empty())
+            .map(|method| format!("divine:{method}"))
+            .unwrap_or_else(|| name.to_string()),
         "use_meme" => args
             .get("action")
             .and_then(Value::as_str)

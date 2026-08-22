@@ -148,7 +148,9 @@ pub(crate) fn is_subagent_tool(name: &str) -> bool {
 }
 
 pub(crate) fn tool_event_base_name(name: &str) -> &str {
-    if name.starts_with("use_meme:") {
+    if name.starts_with("divine:") {
+        "divine"
+    } else if name.starts_with("use_meme:") {
         "use_meme"
     } else if name.starts_with("load_skill:") {
         "load_skill"
