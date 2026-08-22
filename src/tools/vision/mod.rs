@@ -192,12 +192,127 @@ async fn analyze_image(args: Value, config: AppConfig, paths: MiyuPaths) -> Resu
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("Describe this image concisely and point out the important details.")
         .trim();
+    // 视频走独立路由(08-22):OpenRouter 系 video_url 内容块,仅视频能力
+    // 模型(如 ox-alpha)接受。
+    if let Some(mime) = video_mime(image) {
+        let video_url = if image.starts_with("http://") || image.starts_with("https://") {
+            image.to_string()
+        } else {
+            local_video_data_url(image, mime)?
+        };
+        return analyze_video_url_with_prompt(&config, &paths, &video_url, prompt).await;
+    }
     let image_url = if image.starts_with("http://") || image.starts_with("https://") {
         image.to_string()
     } else {
         local_image_data_url(image)?
     };
     analyze_image_url_with_prompt(&config, &paths, &image_url, prompt).await
+}
+
+/// 按扩展名识别视频并给出 mime;None=按图片处理。
+fn video_mime(value: &str) -> Option<&'static str> {
+    let lower = value.split('?').next().unwrap_or(value).to_ascii_lowercase();
+    let ext = lower.rsplit('.').next()?;
+    Some(match ext {
+        "mp4" | "m4v" => "video/mp4",
+        "mpeg" | "mpg" => "video/mpeg",
+        "mov" => "video/mov",
+        "webm" => "video/webm",
+        _ => return None,
+    })
+}
+
+/// base64 后约 +33%,再叠请求 JSON 外壳——24MB 原始体积是中转普遍能扛的
+/// 安全线;超了指引裁剪而不是静默截断。
+const MAX_VIDEO_BYTES: u64 = 24 * 1024 * 1024;
+
+fn local_video_data_url(value: &str, mime: &str) -> Result<String> {
+    let path = expand_path(value);
+    let metadata = std::fs::metadata(&path)
+        .with_context(|| format!("failed to stat video {}", path.display()))?;
+    if !metadata.is_file() {
+        bail!("video path is not a file: {}", path.display())
+    }
+    if metadata.len() > MAX_VIDEO_BYTES {
+        bail!(
+            "video is {:.1} MB; the limit is {} MB — trim or compress it first (e.g. ffmpeg -ss/-t or lower the resolution)",
+            metadata.len() as f64 / 1024.0 / 1024.0,
+            MAX_VIDEO_BYTES / 1024 / 1024
+        )
+    }
+    let bytes = std::fs::read(&path)?;
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+pub async fn analyze_video_url_with_prompt(
+    config: &AppConfig,
+    paths: &MiyuPaths,
+    video_url: &str,
+    prompt: &str,
+) -> Result<String> {
+    let vision = &config.plugins.vision;
+    if !vision.enabled {
+        bail!("vision plugin is disabled")
+    }
+    let client = video_client(config, paths)?.with_request_timeouts(
+        Duration::from_secs(vision.response_header_timeout_seconds.max(1)),
+        Duration::from_secs(vision.stream_idle_timeout_seconds.max(1)),
+    );
+    let endpoint_count = client.endpoint_count();
+    let request = client.chat_stream(
+        vec![
+            ChatMessage::system("Answer based on the video content; do not make up details you cannot see."),
+            ChatMessage::user_with_video(prompt, video_url.to_string()),
+        ],
+        Vec::new(),
+        |_| Ok(()),
+    );
+    let result = with_image_timeout(vision_pool_timeout(vision, endpoint_count), request).await?;
+    if result.content.trim().is_empty() {
+        bail!("video model returned empty response")
+    }
+    Ok(result.content)
+}
+
+/// 视频模型路由:显式 video_provider_id/video_model 优先;否则在启用的多模态
+/// 模型里挑 models.dev 标了 video 输入能力的;都没有给出可操作的报错。
+fn video_client(config: &AppConfig, paths: &MiyuPaths) -> Result<OpenAiCompatibleClient> {
+    let vision = &config.plugins.vision;
+    let provider_id = vision.video_provider_id.trim();
+    let model = vision.video_model.trim();
+    if !provider_id.is_empty() || !model.is_empty() {
+        if provider_id.is_empty() || model.is_empty() {
+            bail!("plugins.vision.video_provider_id 与 video_model 需同时配置");
+        }
+        let mut provider = config.provider(Some(provider_id))?.clone();
+        provider.default_model = model.to_string();
+        if !provider
+            .models
+            .iter()
+            .any(|item| item == &provider.default_model)
+        {
+            provider.models.push(provider.default_model.clone());
+        }
+        return OpenAiCompatibleClient::new(&provider, config, paths);
+    }
+    let choices = config
+        .active_multimodal_provider_model_choices()
+        .into_iter()
+        .filter(|choice| {
+            config.model_supports_any_input(&choice.provider_id, &choice.model, &["video"])
+        })
+        .collect::<Vec<_>>();
+    if !choices.is_empty() {
+        return OpenAiCompatibleClient::from_choices(config, paths, &choices)
+            .map(|client| client.with_request_scope("vision"));
+    }
+    bail!(
+        "no video-capable model available: set plugins.vision.video_provider_id/video_model to a model with video input (e.g. ox-alpha-free on an OpenRouter-compatible relay)"
+    )
 }
 
 async fn analyze_scoped_image(
@@ -438,6 +553,32 @@ fn mime_from_path(path: &Path) -> Result<&'static str> {
         value => {
             bail!("unsupported image extension: {value}; supported: jpg, jpeg, png, webp, gif")
         }
+    }
+}
+
+#[cfg(test)]
+mod video_route_tests {
+    use super::*;
+
+    /// 扩展名分流是视频路由的唯一开关:带查询串的 URL、大小写、图片后缀
+    /// 都不能误判。
+    #[test]
+    fn video_mime_detection_covers_url_and_case() {
+        assert_eq!(video_mime("/tmp/a.mp4"), Some("video/mp4"));
+        assert_eq!(video_mime("/tmp/A.MOV"), Some("video/mov"));
+        assert_eq!(video_mime("https://x.com/v.webm?sig=abc"), Some("video/webm"));
+        assert_eq!(video_mime("/tmp/a.png"), None);
+        assert_eq!(video_mime("https://x.com/v"), None);
+    }
+
+    /// wire 形态锁定:OpenRouter/Qwen 系约定 {"type":"video_url","video_url":{"url":…}}。
+    #[test]
+    fn video_part_serializes_to_openrouter_shape() {
+        let message = crate::llm::ChatMessage::user_with_video("看看这段", "data:video/mp4;base64,AAAA");
+        let json = serde_json::to_value(&message).unwrap();
+        let parts = json["content"].as_array().unwrap();
+        assert_eq!(parts[1]["type"], "video_url");
+        assert_eq!(parts[1]["video_url"]["url"], "data:video/mp4;base64,AAAA");
     }
 }
 

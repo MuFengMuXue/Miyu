@@ -281,7 +281,7 @@ impl PlatformPlugin for MessageRecallPlugin {
                 return Ok(());
             }
             input.system_context.push(
-                "QQ 撤回规则：使用 qq_withdraw_message。当前消息有引用目标时省略 message_id，系统会采用可信引用；没有引用时必须提供明确的 message_id。“这条/那条消息”本身不能确定目标，必须请用户回复目标消息。工具失败后不得改撤其他消息，也不得声称撤回成功。"
+                "<qq-recall-rule>Withdraw messages with qq_withdraw_message. When the current message replies to a target, omit message_id and the trusted reply target is used. Without a reply, an explicit message_id is required. Phrases like \"that message\" cannot identify a target; ask the user to reply to it. After a failure, never withdraw a different message and never claim success.</qq-recall-rule>"
                     .to_string(),
             );
             Ok(())

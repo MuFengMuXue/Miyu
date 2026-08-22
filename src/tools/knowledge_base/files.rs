@@ -346,7 +346,7 @@ impl KnowledgeBase {
         Ok(())
     }
 
-    pub(in crate::tools::knowledge_base) fn import_file(
+    pub(in crate::tools) fn import_file(
         &self,
         source: &Path,
         name: &str,
@@ -403,7 +403,7 @@ impl KnowledgeBase {
         }
     }
 
-    pub(in crate::tools::knowledge_base) fn safe_file_path(&self, rel: &str) -> Result<PathBuf> {
+    pub(in crate::tools) fn safe_file_path(&self, rel: &str) -> Result<PathBuf> {
         let rel = normalize_relative_path(rel)?;
         let path = self.files_dir.join(&rel);
         let base = self

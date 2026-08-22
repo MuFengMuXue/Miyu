@@ -300,7 +300,8 @@ impl RunEventMapper {
                         }),
                     ),
                     Err(error) => {
-                        tracing::warn!(
+                        // warn 在默认 ERROR 级别下不可见——图片静默丢失(08-21)。
+                        tracing::error!(
                             run_id = %self.run_id,
                             tool = %tool_name,
                             error = %error,

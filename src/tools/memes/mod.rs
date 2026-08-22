@@ -186,26 +186,32 @@ async fn search_meme(args: Value, config: &AppConfig, paths: &MiyuPaths) -> Resu
         // 字符里,origin 采集元数据占 20.2%、score 全精度浮点 5.4%、
         // source 4.3%、name.en 约 5%,对选表情包零价值)。tags 照旧参与
         // 上面的 score_meme 排序,只是不再发给模型。
-        .map(|(_score, meme)| {
-            json!({
-                "id": unique_short_id_from_ids(&ids, &meme.item.id),
-                "name": meme.item.name.zh,
-                "description": meme.item.description,
-                "usage": meme.item.usage,
-                "avoid": meme.item.avoid,
-                "animated": meme.item.animated,
-            })
-        })
+        .map(|(_score, meme)| meme)
         .collect::<Vec<_>>();
-    if limit == 1 {
-        return Ok(json!({
-            "success": true,
-            "library": library,
-            "result": results.into_iter().next(),
-        })
-        .to_string());
+    // 08-21 token-diet:候选列表改为行格式,不再逐条 JSON 重复键名。
+    let mut output = format!("library {library}: {} candidate(s)\n", results.len());
+    for meme in &results {
+        let mut line = format!(
+            "- id={} {}",
+            unique_short_id_from_ids(&ids, &meme.item.id),
+            meme.item.name.zh
+        );
+        if !meme.item.description.is_empty() {
+            line.push_str(&format!(" — {}", meme.item.description));
+        }
+        if !meme.item.usage.is_empty() {
+            line.push_str(&format!(" | usage: {}", meme.item.usage));
+        }
+        if !meme.item.avoid.is_empty() {
+            line.push_str(&format!(" | avoid: {}", meme.item.avoid));
+        }
+        if meme.item.animated {
+            line.push_str(" [animated]");
+        }
+        output.push_str(&line);
+        output.push('\n');
     }
-    Ok(json!({ "success": true, "library": library, "results": results }).to_string())
+    Ok(output)
 }
 
 async fn show_meme(
@@ -229,12 +235,14 @@ async fn show_meme(
             vision::print_image_file(&meme.path, size).await?;
         }
     }
-    Ok(json!({
-        "success": true,
-        "id": unique_short_id_from_ids(&ids, &meme.item.id),
-        "description": meme.item.description,
-    })
-    .to_string())
+    // 文本形态;compact_sent_meme_report(agent/reports.rs)对新旧两种形态
+    // 都能解析。
+    let short_id = unique_short_id_from_ids(&ids, &meme.item.id);
+    if meme.item.description.is_empty() {
+        Ok(format!("sent meme {short_id}"))
+    } else {
+        Ok(format!("sent meme {short_id}: {}", meme.item.description))
+    }
 }
 
 

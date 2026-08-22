@@ -524,7 +524,7 @@ pub(in crate::web) fn spawn_session_title_refinement(
     tokio::task::spawn_local(async move {
         let session_id = store.session_id();
         let prompt = format!(
-            "为下面这条用户消息生成一个简洁的会话标题。要求：不超过 16 个字，             概括主题，只输出标题本身，不要引号、句号或任何解释。
+            "为下面这条用户消息生成一个简洁的会话标题：不超过 16 个字，概括主题，只输出标题本身，不要引号、句号或解释。
 
 用户消息：{seed}"
         );

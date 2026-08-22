@@ -52,10 +52,19 @@ pub enum ChatContentPart {
     Text { text: String },
     #[serde(rename = "image_url")]
     ImageUrl { image_url: ImageUrlContent },
+    /// 视频输入(08-22):OpenRouter/Qwen 系 openai-chat 约定
+    /// `{"type":"video_url","video_url":{"url":…}}`,仅视频能力模型接受。
+    #[serde(rename = "video_url")]
+    VideoUrl { video_url: VideoUrlContent },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageUrlContent {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoUrlContent {
     pub url: String,
 }
 
@@ -211,6 +220,20 @@ impl ChatMessage {
                 ChatContentPart::ImageUrl {
                     image_url: ImageUrlContent {
                         url: image_url.into(),
+                    },
+                },
+            ])),
+            ..Self::base("user")
+        }
+    }
+
+    pub fn user_with_video(text: impl Into<String>, video_url: impl Into<String>) -> Self {
+        Self {
+            content: Some(ChatContent::Parts(vec![
+                ChatContentPart::Text { text: text.into() },
+                ChatContentPart::VideoUrl {
+                    video_url: VideoUrlContent {
+                        url: video_url.into(),
                     },
                 },
             ])),

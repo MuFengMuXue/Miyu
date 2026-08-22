@@ -156,10 +156,8 @@ impl GroupManagementPlugin {
                 "special_title".to_string(),
                 json!({ "type": "string", "description": "仅 action=title。要设置的群头衔；空串表示清除。" }),
             );
-            properties.insert(
-                "duration".to_string(),
-                json!({ "type": "integer", "default": -1, "description": "仅 action=title。头衔有效期秒数；-1 表示永久。" }),
-            );
+            // duration(头衔有效期)已从 schema 撤下(08-21 token-diet 用户裁定:
+            // QQ 协议侧头衔有效期基本不生效);处理器仍按默认 -1 永久处理。
         }
         registry.register(
             ToolSpec::new(
@@ -605,7 +603,7 @@ impl PlatformPlugin for Arc<GroupManagementPlugin> {
         Box::pin(async move {
             if context.conversation.kind == ConversationKind::Group {
                 GroupManagementPlugin::prepare_role(context).await;
-                input.system_context.push("<qq-group-management>执行群管理动作前必须调用对应工具；只有工具返回 success=true 后才能声称动作已经完成。普通成员触发敏感动作时，工具可能要求在本轮原样再次调用同一工具进行确认。</qq-group-management>".to_string());
+                input.system_context.push("<qq-group-management>Call the moderation tool before any group-management action, and claim it done only after the tool reports success. For sensitive actions from ordinary members, the tool may ask you to repeat the identical call this turn to confirm.</qq-group-management>".to_string());
             }
             Ok(())
         })

@@ -20,7 +20,6 @@ pub(in crate::tools) const SUBAGENT_EXCLUDED: &[&str] = &[
     "task",
     "task_agent",
     "deep_research",
-    "claude_code",
     "load_skill",
     "manage_skill",
     "alarm",
@@ -433,16 +432,18 @@ async fn run_task_core(
 
     let final_text = result.content.trim().to_string();
 
-    let output = serde_json::to_string_pretty(&json!({
-        "ok": true,
-        "kind": "task",
-        "tier": tier.label(),
-        "tier_notice": tier_notice,
-        "description": description,
-        "state": state,
-        "result": final_text,
-        "stats": stats.public(),
-    }))?;
+    // 08-21 token-diet:成功路径改文本形态——子代理结论不再被 JSON 转义
+    // (换行/引号转义在长结论上是实打实的浪费)。result: 之后到结尾都是
+    // 结论本体,tool_report.rs 的持久化提取按此约定解析;错误路径保留
+    // ok:false JSON(成败判定的结构即功能)。
+    let mut output = format!("task {state} (tier {}): {description}\n", tier.label());
+    if let Some(notice) = &tier_notice {
+        output.push_str(notice);
+        output.push('\n');
+    }
+    output.push_str(&format!("stats: {}\n", serde_json::to_string(&stats.public())?));
+    output.push_str("result:\n");
+    output.push_str(&final_text);
     // Prefer the endpoint that actually produced the final reply (pools
     // load-balance, so the representative pool entry may differ).
     let model_choice = match (&result.provider_id, &result.model) {

@@ -320,7 +320,7 @@ pub(in crate::platforms::plugins::real_context) fn format_history_time(timestamp
     chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
         .map(|time| {
             time.with_timezone(&chrono::Local)
-                .format("%H:%M:%S")
+                .format("%H:%M")
                 .to_string()
         })
         .unwrap_or_else(|| timestamp.to_string())

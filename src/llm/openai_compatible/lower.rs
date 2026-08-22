@@ -76,6 +76,9 @@ pub(in crate::llm::openai_compatible) fn lower_responses_user_content(content: O
                 crate::llm::ChatContentPart::ImageUrl { image_url } => {
                     json!({"type": "input_image", "image_url": image_url.url})
                 }
+                crate::llm::ChatContentPart::VideoUrl { .. } => {
+                    json!({"type": "input_text", "text": "[video input omitted: this provider protocol has no video support]"})
+                }
             })
             .collect(),
         Some(crate::llm::ChatContent::Text(text)) => vec![json!({"type": "input_text", "text": text})],
@@ -90,7 +93,8 @@ pub(in crate::llm::openai_compatible) fn chat_content_text(content: Option<crate
             .into_iter()
             .filter_map(|part| match part {
                 crate::llm::ChatContentPart::Text { text } => Some(text),
-                crate::llm::ChatContentPart::ImageUrl { .. } => None,
+                crate::llm::ChatContentPart::ImageUrl { .. }
+                | crate::llm::ChatContentPart::VideoUrl { .. } => None,
             })
             .collect::<Vec<_>>()
             .join(""),
@@ -176,6 +180,9 @@ pub(in crate::llm::openai_compatible) fn lower_anthropic_user_content(content: O
                 crate::llm::ChatContentPart::ImageUrl { image_url } => {
                     lower_anthropic_image_url(&image_url.url)
                 }
+                crate::llm::ChatContentPart::VideoUrl { .. } => Some(AnthropicContentBlock::Text {
+                    text: "[video input omitted: this provider protocol has no video support]".to_string(),
+                }),
             })
             .collect(),
         Some(crate::llm::ChatContent::Text(text)) => vec![AnthropicContentBlock::Text { text }],
@@ -283,7 +290,8 @@ pub(in crate::llm::openai_compatible) fn chat_content_text_ref(content: Option<&
             .iter()
             .filter_map(|part| match part {
                 crate::llm::ChatContentPart::Text { text } => Some(text.clone()),
-                crate::llm::ChatContentPart::ImageUrl { .. } => None,
+                crate::llm::ChatContentPart::ImageUrl { .. }
+                | crate::llm::ChatContentPart::VideoUrl { .. } => None,
             })
             .collect::<Vec<_>>()
             .join(""),

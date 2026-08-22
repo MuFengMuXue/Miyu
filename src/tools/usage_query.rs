@@ -8,22 +8,30 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+/// 描述与 schema 在智能体侧与平台侧(src/platforms/tool.rs)两处注册共用,
+/// 收敛成一份防止漂移。
+pub(crate) const DESCRIPTION: &str = "Query Miyu's token usage statistics: totals, request count, cache hit rate, and the per-source (agent / messaging platforms) model breakdown. range: 1d (rolling 24h, default) / 7d / 30d / all.";
+
+pub(crate) fn parameters() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "range": {
+                "type": "string",
+                "enum": ["1d", "7d", "30d", "all"],
+                "description": "Time range, defaults to 1d (rolling 24h)."
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
 pub fn register(registry: &mut ToolRegistry, history_file: PathBuf, config: crate::config::AppConfig) {
     registry.register(
         ToolSpec::new(
             "query_token_usage",
-            "Query Miyu's token usage statistics: totals, request count, cache hit rate, and the per-source (agent / messaging platforms) model breakdown. range: 1d (rolling 24h, default) / 7d / 30d / all.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "range": {
-                        "type": "string",
-                        "enum": ["1d", "7d", "30d", "all"],
-                        "description": "Time range, defaults to 1d (rolling 24h)."
-                    }
-                },
-                "additionalProperties": false
-            }),
+            DESCRIPTION,
+            parameters(),
             move |arguments| {
                 let history_file = history_file.clone();
                 let config = config.clone();

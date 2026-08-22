@@ -83,7 +83,7 @@ pub(in crate::agent) fn with_host_environment(
     // dev 也不带:极简原则,编码任务用不上排版说明(验收 08-16 解剖)。
     if mode != AgentMode::Dev {
         system_prompt.push_str(
-            "\n\nWrite math formulas in LaTeX: important formulas in block delimiters (`$$…$$` or `\\[…\\]`, on their own paragraph) render as typeset images; inline math in `$…$` or `\\(…\\)` is transliterated to Unicode math text; formulas inside table cells are supported too, and fractions are laid out vertically. Do not hand-build formulas from bare Unicode or ASCII.",
+            "\n\nWrite math in LaTeX. Block formulas (`$$…$$` on their own paragraph) render as typeset images; inline `$…$` becomes Unicode math text. Never hand-build formulas from bare Unicode or ASCII.",
         );
     }
     system_prompt

@@ -724,7 +724,7 @@ pub fn register_management(registry: &mut ToolRegistry) {
 fn job_spec() -> ToolSpec {
     let actions = json!(["status", "stop"]);
     let action_hint = "status inspects, stop terminates. Defaults to status.";
-    let description = "Background jobs. action=status with no other argument lists every job of this session — each entry carries recent_output (the tail of its log) and log_size, so one call answers \"how are my jobs doing\". For a specific job's incremental output pass job_id plus offset; for several at once pass job_ids (the log budget is split between them). To read a log in full or from the start, read_file its log_path — it pages by line. action=stop terminates jobs (commands get SIGTERM then SIGKILL; subagents are aborted), single or by job_ids. Add all=true to reach other sessions. Returns immediately — never call it in a loop to wait: you are woken automatically when a job finishes.";
+    let description = "Inspect background jobs. action=status with no other argument lists this session's jobs, each with recent_output (log tail) and log_size. For one job's incremental output pass job_id plus offset; for several pass job_ids (the log budget is split between them). To read a log in full, read its log_path with read (paged by line). action=stop terminates jobs (commands get SIGTERM then SIGKILL; subagents are aborted), single or by job_ids. Add all=true to reach other sessions.";
     ToolSpec::new(
         "job",
         description,
@@ -739,7 +739,7 @@ fn job_spec() -> ToolSpec {
                     "items": { "type": "string" },
                     "description": "Several job ids at once; for status the log budget is split between them."
                 },
-                "offset": { "type": "integer", "minimum": 0, "description": "status only: byte offset into the log, from the previous next_offset. The list mode's recent_output is a tail snippet, not a resume point." }
+                "offset": { "type": "integer", "minimum": 0, "description": "status only: byte offset to resume reading the log from (use the previous next_offset)." }
             },
             "additionalProperties": false
         }),

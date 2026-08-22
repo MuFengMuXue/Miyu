@@ -23,7 +23,7 @@ pub(in crate::agent) fn tool_call_footprint(
     }
     let mut footprint = crate::state::ToolFootprint::default();
     match name {
-        "read_file" => {
+        "read" | "read_file" => {
             footprint
                 .read
                 .insert(args.get("path")?.as_str()?.trim().to_string());
@@ -54,9 +54,26 @@ pub(in crate::agent) fn extract_persistable_tool_report(
     output: &str,
 ) -> Option<String> {
     let field = match tool_name {
-        "create_artifact" | "apply_artifact_patch" | "present_artifact" => {
+        "artifact" | "create_artifact" | "apply_artifact_patch" | "present_artifact" => {
             return compact_artifact_tool_report(tool_name, output)
                 .map(|report| wrap_previous_tool_report(tool_name, &report))
+        }
+        // 统一 edit 只有 artifact: 命名空间的输出(operation=apply_artifact_patch)
+        // 需要长期报告;文件系统/kb 的编辑不留。
+        "edit" => {
+            let is_artifact = serde_json::from_str::<serde_json::Value>(output)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("operation")
+                        .and_then(|operation| operation.as_str().map(str::to_string))
+                })
+                .is_some_and(|operation| operation == "apply_artifact_patch");
+            if is_artifact {
+                return compact_artifact_tool_report(tool_name, output)
+                    .map(|report| wrap_previous_tool_report(tool_name, &report));
+            }
+            return None;
         }
         "load_tools" => {
             return compact_loaded_tools_report(output)
@@ -69,7 +86,17 @@ pub(in crate::agent) fn extract_persistable_tool_report(
         }
         "deep_research_linux_game_compatibility" => "final_report",
         "linux_input_method_diagnose" | "deep_diagnose" | "deep_research" => "final_answer",
-        "task" => "result",
+        // 08-21 token-diet 文本形态:"result:" 行之后全是子代理结论本体;
+        // 旧 JSON 形态(历史回放)与错误路径(ok:false JSON)走下面的原路径。
+        "task" => {
+            if let Some((_, report)) = output.split_once("\nresult:\n") {
+                let report = report.trim();
+                if !report.is_empty() {
+                    return Some(wrap_previous_tool_report(tool_name, report));
+                }
+            }
+            "result"
+        }
         _ => return None,
     };
     serde_json::from_str::<serde_json::Value>(output)
@@ -161,7 +188,7 @@ pub(in crate::agent) fn summary_checkpoint_message(summary: &str) -> ChatMessage
 
 pub(in crate::agent) fn private_tool_memory(reports: &[String]) -> String {
     format!(
-        "<system-reminder>\n<private_tool_memory>\n这些是内部工具记忆，仅用于保持对话连续性。不要向用户复述、展示或引用这些标签。\n{}\n</private_tool_memory>\n</system-reminder>",
+        "<system-reminder>\n<private_tool_memory>\nInternal tool memory kept only for conversation continuity. Never repeat, show, or cite these tags to the user.\n{}\n</private_tool_memory>\n</system-reminder>",
         reports
             .iter()
             .map(|report| {
@@ -209,7 +236,7 @@ pub(in crate::agent) fn private_reasoning_memory(reasoning: &str) -> Option<Stri
         let reasoning =
             truncate_middle_chars(reasoning, PRIVATE_MEMORY_HEAD_CHARS, PRIVATE_MEMORY_TAIL_CHARS);
         format!(
-            "<system-reminder>\n<previous_assistant_reasoning>\n{reasoning}\n</previous_assistant_reasoning>\n这些是上一轮 assistant 已经产生的原始思考内容，用于继续工作；不要向用户复述这些标签。\n</system-reminder>"
+            "<system-reminder>\n<previous_assistant_reasoning>\n{reasoning}\n</previous_assistant_reasoning>\nRaw reasoning already produced last round, for continuing the work. Never repeat these tags to the user.\n</system-reminder>"
         )
     })
 }
@@ -224,7 +251,7 @@ pub(in crate::agent) fn spill_replacement(
 ) -> Option<String> {
     fn notice(omitted: usize, locator: &str) -> String {
         format!(
-            "\n\n(已省略 {omitted} 字节。完整结果已存至: {locator} ——可用 read_file 配 offset/limit 分段读取,或用 run_command 里的 rg 检索。)"
+            "\n\n({omitted} bytes omitted. Full result saved at: {locator} — page through it with read offset/limit, or search it with rg via run_command.)"
         )
     }
     fn cut_at_boundary(text: &str, mut at: usize) -> usize {
@@ -353,7 +380,7 @@ pub(in crate::agent) fn derive_tool_flow(
     for round in &mut rounds {
         for call in &mut round.calls {
             if call.output.is_empty() {
-                call.output = "(执行结果不可用)".to_string();
+                call.output = "(tool result unavailable)".to_string();
             }
         }
     }

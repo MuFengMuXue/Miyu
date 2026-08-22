@@ -7473,3 +7473,42 @@ body.miyu-paused *::before,
 body.miyu-paused *::after {
   animation-play-state: paused !important;
 }
+
+/* 生图点阵占位气泡(08-22):工具芯片隐藏,方形气泡内随机区域的小块点阵
+   若隐若现(补丁元素由 app.js 生成,位置/大小/时长随机);tool.image 到达后
+   原地换成图片;失败时占位变错误态并露出芯片。 */
+.tool-card.image-tool-chip {
+  display: none;
+}
+.image-gen-bubble {
+  position: relative;
+  width: min(320px, 70%);
+  aspect-ratio: 1 / 1;
+  margin: 6px 0;
+  border-radius: 16px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.image-gen-bubble .image-gen-label {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  margin: 14px 16px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+.image-gen-bubble .dot-patch {
+  position: absolute;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--text-faint) 1.4px, transparent 1.6px);
+  background-size: 11px 11px;
+  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  opacity: 0;
+  animation: imageGenDotPatch 2.8s ease-in-out forwards;
+}
+@keyframes imageGenDotPatch {
+  0% { opacity: 0; }
+  45% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
