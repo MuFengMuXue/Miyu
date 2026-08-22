@@ -602,3 +602,53 @@ fn queued_followup_resets_prior_direct_send_suppression() {
     assert_eq!(text, "queued follow-up answer");
     assert_eq!(suppression.finish(text.len()), (Vec::new(), false));
 }
+
+/// 文字投递幂等闸(08-22 复读取证):同回合内同义改写变体要被拦,
+/// 不同话题放行,短文本不设闸。
+#[test]
+fn reply_text_gate_blocks_paraphrase_variants_only() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let context = PlatformTurnContext::new(
+        PlatformConversation {
+            platform: "onebot".to_string(),
+            account_id: "10000".to_string(),
+            kind: ConversationKind::Group,
+            conversation_id: "130515298".to_string(),
+        },
+        "20000".to_string(),
+        "tester".to_string(),
+        false,
+        AppConfig::default(),
+        paths.clone(),
+        StateStore::new(&paths).unwrap(),
+        Arc::new(CountingAdapter {
+            calls: AtomicUsize::new(0),
+            fail_first: false,
+            messages: Mutex::new(Vec::new()),
+            group_members: Vec::new(),
+        }),
+        Arc::new(plugins::PlatformPluginRegistry::new(Vec::new())),
+    );
+
+    // 截图同款:两段同义改写变体。
+    let first = "怼得好，这种批量灌水issue的就该治。重复提交的可以直接标duplicate关掉，信息不全的按模板要求补齐，不补就关。GitHub的issue不是许愿池，维护者的精力应该花在解决问题上而不是猜谜上。要是这人持续骚扰，还可以在仓库里加个行为规范说明，屡教不改的直接拉黑禁言issue区。";
+    let variant = "怼得好，这种批量灌水issue的就该治。重复提交的直接标duplicate关掉，信息不全的按模板要求补齐，不补就关。GitHub的issue不是许愿池，维护者精力应该花在解决问题而不是猜谜上。要是这人持续骚扰，仓库里加个行为规范说明，屡教不改直接拉黑禁言issue区。";
+    let unrelated = "版本号不按你的命名规范来，说明他压根没装过你这个插件，或者装的是别人魔改的二道贩子版本，连issue都提错仓库了。直接在issue里回一句该版本号不属于本插件，请确认你使用的来源，等他自证。";
+
+    assert!(!context.is_duplicate_reply_text(first), "首发不该被拦");
+    context.record_delivered_reply_text(first);
+    assert!(
+        context.is_duplicate_reply_text(variant),
+        "同义改写变体必须命中幂等闸"
+    );
+    assert!(
+        !context.is_duplicate_reply_text(unrelated),
+        "不同话题的回复不该被拦"
+    );
+    context.record_delivered_reply_text(unrelated);
+    assert!(
+        !context.is_duplicate_reply_text("好，收到。"),
+        "短文本不设闸"
+    );
+}

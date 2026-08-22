@@ -68,6 +68,10 @@ pub(crate) struct PlatformTurnContext {
     pub(crate) group_member_cache: Mutex<HashMap<String, PlatformGroupMember>>,
     pub(crate) plugin_values: Mutex<BTreeMap<String, Value>>,
     pub(crate) delivered_image_digests: Mutex<HashSet<blake3::Hash>>,
+    /// 本回合已投递的回复文本(归一化 bigram 集)。文字版幂等闸(08-22 复读
+    /// 取证):端点故障日模型会把"发送回复"重演成同义变体,digest 拦不住,
+    /// 按近似度拦。仅回合内生效——跨回合相似回复可能是正当的再次回答。
+    pub(crate) delivered_reply_texts: Mutex<Vec<std::collections::HashSet<(char, char)>>>,
     /// Lazy file refs for queued follow-up prompts, keyed by prompt id.
     pub(crate) queued_files: Mutex<BTreeMap<String, Vec<PlatformContextFileRef>>>,
     pub(crate) reply_rate_available: AtomicBool,
@@ -105,6 +109,7 @@ impl PlatformTurnContext {
             group_member_cache: Mutex::new(HashMap::new()),
             plugin_values: Mutex::new(BTreeMap::new()),
             delivered_image_digests: Mutex::new(HashSet::new()),
+            delivered_reply_texts: Mutex::new(Vec::new()),
             queued_files: Mutex::new(BTreeMap::new()),
             reply_rate_available: AtomicBool::new(true),
             pending_final_reply_suppression: AtomicBool::new(false),
@@ -547,6 +552,27 @@ impl PlatformTurnContext {
         }
     }
 
+    pub(crate) fn is_duplicate_reply_text(&self, text: &str) -> bool {
+        let grams = reply_text_bigrams(text);
+        // 短文本(问候/单句确认)天然高相似,不设闸。
+        if grams.len() < 16 {
+            return false;
+        }
+        self.delivered_reply_texts
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|prev| bigram_jaccard(&grams, prev) >= 0.66)
+    }
+
+    pub(crate) fn record_delivered_reply_text(&self, text: &str) {
+        let grams = reply_text_bigrams(text);
+        if grams.is_empty() {
+            return;
+        }
+        self.delivered_reply_texts.lock().unwrap().push(grams);
+    }
+
     pub(crate) fn record_delivered_images(&self, receipt: &SendReceipt) {
         if receipt.image_digests.is_empty() {
             return;
@@ -814,4 +840,30 @@ pub(crate) fn register_platform_tools(
 ) {
     tool::register(registry, context.clone());
     context.plugins.register_tools(registry, context.clone());
+}
+
+/// 归一化(去标点空白、小写)后的字符 bigram 集。同义改写变体的用词高度
+/// 重叠,bigram Jaccard 是廉价且够用的近似度。
+pub(crate) fn reply_text_bigrams(text: &str) -> std::collections::HashSet<(char, char)> {
+    let normalized: Vec<char> = text
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    normalized
+        .windows(2)
+        .map(|pair| (pair[0], pair[1]))
+        .collect()
+}
+
+pub(crate) fn bigram_jaccard(
+    a: &std::collections::HashSet<(char, char)>,
+    b: &std::collections::HashSet<(char, char)>,
+) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let intersection = a.intersection(b).count();
+    let union = a.len() + b.len() - intersection;
+    intersection as f64 / union as f64
 }

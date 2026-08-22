@@ -253,7 +253,11 @@ pub(crate) async fn flush_intermediate_reply(
         ))
         .await
     {
-        Ok(_) => tracing::info!(
+        // 投递成功才进幂等闸登记(失败就登记会把之后的正当重发也拦掉):
+        // 模型下一轮若用工具重发同段(端点故障日的重演惯犯),send 侧被拒。
+        Ok(_) => {
+            context.record_delivered_reply_text(visible);
+            tracing::info!(
             target: "miyu::qq",
             chars = visible.chars().count(),
             "{}",
@@ -261,7 +265,8 @@ pub(crate) async fn flush_intermediate_reply(
                 "sent an intermediate platform reply",
                 "已发送平台中间消息",
             )
-        ),
+            );
+        }
         Err(error) => tracing::warn!(
             target: "miyu::qq",
             error = %error,

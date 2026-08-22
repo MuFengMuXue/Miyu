@@ -191,12 +191,21 @@ async fn mention(arguments: Value, context: &PlatformTurnContext) -> Result<Stri
 
 async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<String> {
     let mut segments = Vec::new();
-    if let Some(text) = arguments
+    let text_arg = arguments
         .get("text")
         .and_then(Value::as_str)
-        .filter(|text| !text.trim().is_empty())
-    {
-        segments.push(OutboundSegment::Markdown(text.to_string()));
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string);
+    // 文字幂等闸(08-22 复读取证):与图片 digest 闸同语义。端点故障日模型
+    // 会把"发送回复"重演成同义变体——本回合内近似文本直接拒发。
+    let mut deduplicated_text = false;
+    if let Some(text) = text_arg.as_deref() {
+        if context.is_duplicate_reply_text(text) {
+            deduplicated_text = true;
+        } else {
+            segments.push(OutboundSegment::Markdown(text.to_string()));
+        }
     }
     let images = array(&arguments, "images")?;
     if images.len() > MAX_TOOL_IMAGES {
@@ -274,11 +283,24 @@ async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<Str
         segments.push(OutboundSegment::FilePath { path, name });
     }
     if segments.is_empty() {
+        if deduplicated_text || skipped_duplicates > 0 {
+            return Ok(json!({
+                "ok": true,
+                "deduplicated": true,
+                "message": "This reply was already delivered to this conversation; the send is complete. Do not send it again or a rephrased version of it."
+            })
+            .to_string());
+        }
         bail!("text, images, or files is required");
     }
     let receipt = context
         .send(OutboundMessage::segments(OutboundOrigin::Tool, segments))
         .await?;
+    if let Some(text) = text_arg.as_deref() {
+        if !deduplicated_text {
+            context.record_delivered_reply_text(text);
+        }
+    }
     Ok(json!({
         "ok": true,
         "message_ids": receipt.message_ids,
