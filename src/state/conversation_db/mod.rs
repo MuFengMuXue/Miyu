@@ -98,6 +98,15 @@ fn reclaim_free_pages(conn: &Connection) {
         let _ = conn.execute_batch("VACUUM;");
         return;
     }
+    // 08-21 取证:incremental_vacuum 的截断提交对 wal/主文件失配零容忍,是把
+    // 失配放大成截断损坏的放大器;子代理审计等瞬时连接也在每次 open 白跑它。
+    // 攒到 64 空闲页(256 KB)再回收,把最脆的代码路径从"每次 open"降到"偶尔"。
+    let free: i64 = conn
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .unwrap_or(0);
+    if free < 64 {
+        return;
+    }
     let _ = conn.execute_batch("PRAGMA incremental_vacuum(256);");
 }
 
@@ -119,6 +128,19 @@ impl ConversationDb {
              PRAGMA foreign_keys = ON;
              PRAGMA cache_size = -1024;",
         )?;
+        // 08-21 生图 bug 教训:损坏库(freelist 不一致)只在 ≥1MB blob 写入时
+        // 失败,且失败只打 warn,静默丢了三天图片资产。启动即体检,坏了就用
+        // 默认级别可见的 error 亮出来;只报不拦——拦截会把用户整个锁在门外。
+        let check = conn
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))
+            .unwrap_or_else(|error| format!("quick_check failed: {error}"));
+        if check != "ok" {
+            tracing::error!(
+                db = %db_path.display(),
+                %check,
+                "conversation.db 未通过完整性体检;大对象写入可能失败,请备份后用 sqlite3 .recover 重建"
+            );
+        }
         // Back up the database file before applying schema migrations to a
         // database that already holds data.
         if super::migrations::current_version(&conn)? < super::migrations::LATEST_VERSION {
@@ -128,12 +150,24 @@ impl ConversationDb {
                 |row| row.get(0),
             )?;
             if has_turns {
-                let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
-                let _ = std::fs::copy(&db_path, state_dir.join("conversation.db.bak"));
+                // 08-21 取证:std::fs::copy 打开再 close 主库文件,POSIX close
+                // 语义会连带丢掉本进程在主文件上的常驻 WAL 锁,且拷出的副本
+                // 可能撕裂。VACUUM INTO 在 SQLite 事务内导出自洽副本,两个坑
+                // 一起填(transfer/export.rs 同范式)。
+                let bak = state_dir.join("conversation.db.bak");
+                let _ = std::fs::remove_file(&bak);
+                if let Err(error) =
+                    conn.execute("VACUUM INTO ?1", [bak.to_string_lossy().as_ref()])
+                {
+                    tracing::error!(%error, "conversation.db 迁移前备份失败(继续迁移)");
+                }
             }
         }
         super::migrations::run_migrations(&mut conn)?;
-        reclaim_free_pages(&conn);
+        // 坏库上跑 vacuum 会把失配放大成截断损坏(08-21 取证),体检不过就跳过。
+        if check == "ok" {
+            reclaim_free_pages(&conn);
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
