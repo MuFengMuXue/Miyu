@@ -3,7 +3,6 @@ mod files;
 mod sysinfo;
 use command::*;
 // claude_code 复用同一套进程组击杀语义,不再抄一份。
-pub(in crate::tools) use command::CommandProcessGroup;
 pub(crate) use files::*;
 use sysinfo::*;
 
@@ -23,8 +22,13 @@ use tokio::process::Command;
 /// 而不是当成一闪而过的进度。回收站用它交代失败清单。
 pub(crate) const TOOL_SUMMARY_PREFIX: &str = "__tool_summary__";
 
-pub fn register(registry: &mut ToolRegistry, allow_command_execution: bool) {
-    register_readonly(registry);
+pub fn register(
+    registry: &mut ToolRegistry,
+    allow_command_execution: bool,
+    config: &crate::config::AppConfig,
+    paths: &crate::paths::MiyuPaths,
+) {
+    register_readonly(registry, config, paths);
     register_run_command(registry, allow_command_execution);
     registry.register(ToolSpec::new_with_progress(
         "trash_path",
@@ -49,18 +53,30 @@ pub fn register_run_command(registry: &mut ToolRegistry, allow_command_execution
 
 /// 只读工具集。计划模式移除后这里不再注册 `run_command`——它在
 /// `register` 里紧接着就会被可写版覆盖,留着只是一份读不到的死描述。
-pub fn register_readonly(registry: &mut ToolRegistry) {
+pub fn register_readonly(
+    registry: &mut ToolRegistry,
+    config: &crate::config::AppConfig,
+    paths: &crate::paths::MiyuPaths,
+) {
     registry.register(ToolSpec::new(
         "check_os_info",
         "Check basic read-only OS, shell, desktop session, kernel, host, and package-manager context. For concrete Linux input method issues, load the linux-input-method-diagnose skill.",
         json!({"type":"object","properties":{},"additionalProperties":false}),
         |_| async move { check_os_info() },
     ));
+    // 08-21 Edit/Read 统一:read_file 更名 read,并认 `artifact:`/`kb:` 前缀
+    // (Artifact 库与知识库的读取工具随之退场)。
+    let read_config = config.clone();
+    let read_paths = paths.clone();
     registry.register(ToolSpec::new(
-        "read_file",
+        "read",
         "Read a UTF-8 text file by 1-based line offset, or list a directory page. Use absolute paths, workspace-relative paths, or ~/ paths. Large files are paged and binary files are refused.",
         json!({"type":"object","properties":{"path":{"type":"string","description": "File or directory path."},"offset":{"type":"integer","description": "Starting line, 1-based."},"limit":{"type":"integer","description": "Maximum lines to read."}},"required":["path"],"additionalProperties":false}),
-        |args| async move { read_file(args) },
+        move |args| {
+            let config = read_config.clone();
+            let paths = read_paths.clone();
+            async move { read_dispatch(args, &config, &paths) }
+        },
     ));
     registry.register(ToolSpec::new(
         "glob",
@@ -74,6 +90,38 @@ pub fn register_readonly(registry: &mut ToolRegistry) {
         json!({"type":"object","properties":{"path":{"type":"string","description": "Directory or file to search. Defaults to workspace; use ~ or /home for user files, or / for protected global search."},"pattern":{"type":"string","description": "Regex pattern."},"include":{"type":"string","description": "Optional case-insensitive file glob filter."},"max_results":{"type":"integer","description": "Maximum matches."}},"required":["pattern"],"additionalProperties":false}),
         |args| async move { grep_text(args).await },
     ));
+}
+
+/// `read` 的命名空间分发:`artifact:名字` 读当前会话的 Artifact 库
+/// (空名字=列清单),`kb:相对路径` 读知识库,其余走文件系统原路。
+fn read_dispatch(
+    mut args: Value,
+    config: &crate::config::AppConfig,
+    paths: &crate::paths::MiyuPaths,
+) -> Result<String> {
+    let path_arg = args
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if let Some(name) = path_arg.strip_prefix("artifact:") {
+        let session = crate::tools::workspace::try_session()
+            .ok_or_else(|| anyhow::anyhow!("artifact: paths require a session turn"))?;
+        let name = name.trim();
+        if name.is_empty() {
+            return crate::tools::artifact::managed_manifest(paths, &session);
+        }
+        let root = paths.data_dir.join("artifacts");
+        let resolved = crate::tools::artifact::managed_file_path(&root, &session, name)?;
+        args["path"] = Value::String(resolved.to_string_lossy().to_string());
+    } else if let Some(rel) = path_arg.strip_prefix("kb:") {
+        let kb =
+            crate::tools::knowledge_base::KnowledgeBase::new(config.clone(), paths.clone())?;
+        let resolved = kb.safe_file_path(rel.trim())?;
+        args["path"] = Value::String(resolved.to_string_lossy().to_string());
+    }
+    read_file(args)
 }
 
 fn clip_output_with_meta(value: &str) -> ClippedOutput {

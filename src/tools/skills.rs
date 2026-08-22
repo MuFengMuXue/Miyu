@@ -316,11 +316,13 @@ fn available_skills_xml(entries: &[SkillEntry]) -> String {
     let items = entries
         .iter()
         .map(|entry| {
+            // 08-21 文风批:条目单行化——五行 XML 壳对每技能是纯结构开销,
+            // QQ 会话随 load_skill 描述每请求常驻。
             format!(
-                "  <skill>\n    <name>{}</name>\n    <description>{}</description>\n    <source>{}</source>\n  </skill>",
+                "  <skill name=\"{}\" source=\"{}\">{}</skill>",
                 xml_escape(&entry.metadata.name),
-                xml_escape(&entry.metadata.description),
                 entry.source.as_str(),
+                xml_escape(&entry.metadata.description),
             )
         })
         .collect::<Vec<_>>()
@@ -367,8 +369,8 @@ mod tests {
         let mut registry = ToolRegistry::new();
         register_skills(&mut registry, &config, &paths).unwrap();
         let description = &registry.get("load_skill").unwrap().description;
-        assert!(description.contains("<name>skill-creator</name>"));
-        assert!(description.contains("<source>built_in</source>"));
+        assert!(description.contains("name=\"skill-creator\""));
+        assert!(description.contains("source=\"built_in\""));
     }
 
     #[test]
@@ -428,7 +430,7 @@ mod tests {
             .get("load_skill")
             .unwrap()
             .description
-            .contains("<name>new-skill</name>"));
+            .contains("name=\"new-skill\""));
         assert!(!refresh_skills(&mut registry, &config, &paths).unwrap());
     }
 
@@ -459,7 +461,7 @@ mod tests {
         assert!(
             stub.function
                 .description
-                .contains("<name>skill-creator</name>"),
+                .contains("name=\"skill-creator\""),
             "stub 里看不到技能名——模型只能猜"
         );
         assert_eq!(

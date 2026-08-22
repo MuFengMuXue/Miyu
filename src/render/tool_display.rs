@@ -201,12 +201,35 @@ pub(crate) fn tool_subject(name: &str, arguments: &str) -> Option<String> {
         | "game_compat"
         | "fcitx5_input_method_wiki_qurey" => string_arg(&args, &["query", "topic"]),
         "archwiki_query" | "query_moegirl" => string_arg(&args, &["title", "query"]),
-        "read_file" => {
+        "read" | "read_file" => {
             let path = string_arg(&args, &["path"])?;
             Some(match read_page_label(&args) {
                 Some(page) => format!("{path} ({page})"),
                 None => path,
             })
+        }
+        // 补丁三件套:从补丁头里抠文件名当副标题,不然工具行只剩一个名字,
+        // 用户分不清这回编辑的是什么(08-22 验收反馈)。
+        "edit" | "kb" | "artifact" | "apply_patch" | "apply_artifact_patch" => {
+            let patch = string_arg(&args, &["patchText", "patch_text"])?;
+            let files: Vec<String> = patch
+                .lines()
+                .filter_map(|line| {
+                    line.strip_prefix("*** Add File: ")
+                        .or_else(|| line.strip_prefix("*** Update File: "))
+                        .or_else(|| line.strip_prefix("*** Delete File: "))
+                })
+                .map(|name| name.trim().to_string())
+                .collect();
+            match files.as_slice() {
+                [] => None,
+                [only] => Some(only.clone()),
+                [first, ..] => Some(format!(
+                    "{first} +{} {}",
+                    files.len() - 1,
+                    t("more", "项")
+                )),
+            }
         }
         "write_file" | "edit_file" | "edit_string" | "manage_script" => {
             string_arg(&args, &["path"])

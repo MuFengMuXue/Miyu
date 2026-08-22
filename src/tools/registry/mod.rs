@@ -509,10 +509,10 @@ impl ToolRegistry {
                 .join(", ");
             let summary = tool_descriptions::group_summary(&group);
             targets.push(format!(
-                "  <target>\n    <name>group:{}</name>\n    <type>group</type>\n    <summary>{}</summary>\n    <tools>{}</tools>\n  </target>",
+                "  <target name=\"group:{}\" type=\"group\" tools=\"{}\">{}</target>",
                 xml_escape(&group),
-                xml_escape(&summary),
                 xml_escape(&members),
+                xml_escape(&summary),
             ));
         }
 
@@ -540,7 +540,7 @@ impl ToolRegistry {
             .collect::<Vec<_>>()
             .join(", ");
         format!(
-            "<script_summary>\n  <total>{}</total>\n  <always_loaded>{}</always_loaded>\n  <lazy>{}</lazy>\n  <unregistered>{}</unregistered>\n  <registered_names>{names}</registered_names>\n</script_summary>",
+            "<script_summary total=\"{}\" always_loaded=\"{}\" lazy=\"{}\" unregistered=\"{}\" registered_names=\"{names}\"/>",
             scripts.len(),
             always_loaded,
             scripts.len() - always_loaded,

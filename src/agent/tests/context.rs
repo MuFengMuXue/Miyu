@@ -855,7 +855,7 @@ fn derive_tool_flow_reconstructs_rounds_from_live_messages() {
     assert_eq!(flow[0].calls[0].arguments, "{\"command\":\"ls\"}");
     assert_eq!(flow[0].calls[0].output, "file-a\nfile-b");
     assert_eq!(flow[1].calls.len(), 2);
-    assert_eq!(flow[1].calls[0].output, "(执行结果不可用)");
+    assert_eq!(flow[1].calls[0].output, "(tool result unavailable)");
     assert_eq!(flow[1].calls[1].output, "搜到了");
 }
 
@@ -870,9 +870,10 @@ fn spill_replacement_respects_budget_and_char_boundaries() {
         "replacement {} > cap",
         replaced.len()
     );
-    assert!(replaced.contains("已省略"));
+    assert!(replaced.contains("bytes omitted"));
     assert!(replaced.contains("/tmp/x.txt"));
     assert!(replaced.starts_with('长'));
+    // 文案已英文化,预算/切口断言不受语言影响。
     assert!(replaced.trim_end().ends_with(')'));
     // 上限连提示都装不下 → 放弃外溢
     assert!(spill_replacement(&output, 60, "/tmp/x.txt").is_none());

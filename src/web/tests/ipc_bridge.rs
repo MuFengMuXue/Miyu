@@ -302,7 +302,7 @@ async fn tool_catalog_matches_the_bridge_callable_set() {
         .filter_map(|tool| tool["name"].as_str())
         .collect::<Vec<_>>();
     assert!(names.contains(&"run_command"), "{names:?}");
-    assert!(names.contains(&"apply_patch"), "{names:?}");
+    assert!(names.contains(&"edit"), "{names:?}");
     assert!(
         !names.contains(&"trash_path"),
         "dev 目录不应混入普通人格工具: {names:?}"
