@@ -344,6 +344,13 @@ pub(crate) struct KittyMath {
 
 /// kitty 家族终端(原生 kitty / ghostty)才用图形协议;其余走半块。
 pub(crate) fn kitty_graphics_supported() -> bool {
+    // 单元测试一律走半块:测试断言的是半块文本产物,而这里读的是**开发者
+    // 终端**的 TERM——在 kitty 里跑 cargo test 会让三个 math 测试改走图形
+    // 协议路径而挂掉(08-21 验收实测)。kitty 序列生成要测就直接调
+    // render_math_kitty,不经此探测。
+    if cfg!(test) {
+        return false;
+    }
     crate::terminal::kitty::is_native_kitty_terminal()
         || std::env::var("TERM").map(|term| term.contains("ghostty")).unwrap_or(false)
         || std::env::var_os("GHOSTTY_RESOURCES_DIR").is_some()
