@@ -5479,6 +5479,22 @@
     }
   }
 
+  /// 新版 todowrite 输出不含清单本体,实时卡片与舞台面板改从会话 API 取。
+  /// 拿不到就静默放弃——面板是附带信息,不打扰对话。
+  async function attachLiveTodoPanel(tool, live, sameSession) {
+    const scope = runSessionId(live.runId);
+    if (!scope) return;
+    try {
+      const response = await apiRequest(`/api/sessions/${encodeURIComponent(scope)}/todos`);
+      const payload = await response.json();
+      const todos = window.MiyuTodos?.normalize(payload?.todos) || null;
+      if (sameSession) renderStageTodos(todos);
+      const panel = todos ? window.MiyuTodos.renderList(todos) : null;
+      tool.card.querySelector(".todo-panel")?.remove();
+      if (panel) tool.card.appendChild(panel);
+    } catch (_) {}
+  }
+
   function syncArtifactsFromTurns(turns) {
     let artifacts = [];
     for (const turn of turns) {
@@ -7018,7 +7034,7 @@
       const background = args.background === true || args.run_in_background === true;
       return background ? `[后台] ${line}` : line;
     }
-    if (toolName === "read_file") {
+    if (toolName === "read" || toolName === "read_file") {
       const path = compactPath(args.path);
       const offset = Number.isFinite(Number(args.offset)) && args.offset != null ? Number(args.offset) : null;
       const limit = Number.isFinite(Number(args.limit)) && args.limit != null ? Number(args.limit) : null;
@@ -7027,7 +7043,7 @@
       const page = limit !== null ? `L${start}-${start + limit - 1}` : `L${start}+`;
       return path ? `${path} (${page})` : page;
     }
-    if (toolName === "apply_patch" || toolName === "apply_artifact_patch") {
+    if (["edit", "artifact", "kb", "apply_patch", "apply_artifact_patch"].includes(toolName)) {
       // 唯一编辑器:patchText 里抠出文件名当副标题,不然标签恒空。
       const text = String(args.patchText || args.patch_text || "");
       const files = [...text.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim());
@@ -7128,6 +7144,9 @@
     // 了第二份真相，改一条忘另一条，同一次调用实时是红的、刷新变绿的。
     const ok = call?.ok !== false;
     card.classList.add(ok ? "is-success" : "is-failure");
+    if (ok && (name === "generate_image" || name === "print_image")) {
+      card.classList.add("image-tool-chip");
+    }
 
     const head = document.createElement("button");
     head.className = "tool-head";
@@ -7250,7 +7269,7 @@
     if (["run_command", "Bash", "job_status", "job_stop"].includes(n)) return "terminal";
     if (["web_search", "web_fetch", "search_web", "webfetch"].includes(n)) return "globe";
     if (n === "search_web_images") return "image-search";
-    if (n === "apply_patch" || n === "apply_artifact_patch") return "square-pen";
+    if (["edit", "artifact", "kb", "apply_patch", "apply_artifact_patch"].includes(n)) return "square-pen";
     if (["recall_memories", "recall_past_events", "remember_fact", "search_evicted_context"].includes(n)) return "brain";
     if (["create_goal", "get_goal", "update_goal"].includes(n)) return "target";
     if (n === "todowrite" || n === "todoupdate") return "list-todo";
@@ -7264,7 +7283,7 @@
     if (n === "read_clipboard") return "clipboard";
     if (n === "get_weather") return "cloud-sun";
     if (["calculator", "scientific_calculator", "calculate_hash", "get_exchange_rate", "decode_encoded_text"].includes(n)) return "calculator";
-    if (n === "read_file") return "file-text";
+    if (n === "read" || n === "read_file") return "file-text";
     if (n === "glob" || n === "grep") return "search";
     if (n === "trash_path") return "trash-2";
     if (n === "load_tools") return "package";
@@ -7275,6 +7294,38 @@
     if (["draw_tarot_card", "draw_zhouyi_hexagram", "draw_fortune_lot"].includes(n)) return "sparkles";
     if (["create_artifact", "read_artifact", "present_artifact"].includes(n)) return "file-text";
     return "wrench";
+  }
+
+  /// 生图占位气泡的点阵动画(A 方案,08-22 定稿):随机位置/大小/时长的
+  /// 小块点阵若隐若现,同屏最多 3 块;出图/失败/离屏即停,定时器不外泄。
+  function startImageGenDots(bubble) {
+    const spawn = () => {
+      if (!bubble.isConnected) {
+        stopImageGenDots(bubble);
+        return;
+      }
+      if (bubble.querySelectorAll(".dot-patch").length >= 3) return;
+      const patch = document.createElement("span");
+      patch.className = "dot-patch";
+      const size = 60 + Math.random() * 90;
+      patch.style.width = `${size}px`;
+      patch.style.height = `${size}px`;
+      patch.style.left = `${Math.random() * 78}%`;
+      patch.style.top = `${Math.random() * 78}%`;
+      patch.style.animationDuration = `${(2.2 + Math.random() * 1.6).toFixed(2)}s`;
+      patch.addEventListener("animationend", () => patch.remove());
+      bubble.appendChild(patch);
+    };
+    spawn();
+    window.setTimeout(spawn, 500);
+    bubble.miyuDotsTimer = window.setInterval(spawn, 700);
+  }
+
+  function stopImageGenDots(bubble) {
+    if (bubble?.miyuDotsTimer) {
+      window.clearInterval(bubble.miyuDotsTimer);
+      bubble.miyuDotsTimer = null;
+    }
   }
 
   function createTool(live, data) {
@@ -7302,6 +7353,9 @@
     const icon = document.createElement("span");
     icon.className = "tool-icon";
     const toolName = String(data?.name || "");
+    // 生图/打图走 GPT 式点阵占位气泡,芯片隐藏(失败时再露出来给细节)。
+    const isImageTool = toolName === "generate_image" || toolName === "print_image";
+    if (isImageTool) card.classList.add("image-tool-chip");
     icon.appendChild(makeIconSlot(toolIconName(toolName)));
     const title = document.createElement("span");
     title.className = "tool-title";
@@ -7389,6 +7443,8 @@
       startedAt: performance.now(),
       finishedAt: null,
       imageCount: 0,
+      isImageTool,
+      imagePlaceholder: null,
       finished: false,
       collapseTimer: null
     };
@@ -7406,6 +7462,18 @@
     updateToolSummary(tool);
     live.tools.set(toolId, tool);
     live.blocks.appendChild(card);
+    if (isImageTool) {
+      const bubble = document.createElement("div");
+      bubble.className = "image-gen-bubble";
+      const label = document.createElement("span");
+      label.className = "image-gen-label";
+      label.textContent = toolName === "print_image" ? "正在加载图片" : "正在生成图片";
+      if (subjectText) bubble.title = subjectText;
+      bubble.appendChild(label);
+      live.blocks.appendChild(bubble);
+      startImageGenDots(bubble);
+      tool.imagePlaceholder = bubble;
+    }
     syncBubbleWidth(live.article);
     contentAdded(live);
     return tool;
@@ -7420,7 +7488,7 @@
   // daemon older than this asset.
   function preparingToolLabel(name, phase) {
     if (phase) return String(phase);
-    if (name === "apply_patch" || name === "apply_artifact_patch") return "准备编辑";
+    if (["edit", "artifact", "kb", "apply_patch", "apply_artifact_patch"].includes(name)) return "准备编辑";
     if (name === "run_command") return "准备执行";
     if (name === "ask_question") return "准备问题";
     return "准备工具";
@@ -7513,7 +7581,14 @@
           finalizeLiveReasoning(live);
           live.contextOperation = null;
           live.assets.push(asset);
-          live.blocks.appendChild(createConversationMedia(asset, { eager: true }));
+          const media = createConversationMedia(asset, { eager: true });
+          if (tool.imagePlaceholder) {
+            stopImageGenDots(tool.imagePlaceholder);
+            tool.imagePlaceholder.replaceWith(media);
+            tool.imagePlaceholder = null;
+          } else {
+            live.blocks.appendChild(media);
+          }
           // 不自动进 artifact:图片已经在气泡里画出来了,再塞进面板等于同一张
           // 图占两个位置,还会把面板自动切过去盖住用户正在看的东西——表情包
           // 也会。要在工作区看，气泡上有「在预览工作区打开」按钮。
@@ -7611,16 +7686,21 @@
       const ok = Boolean(data?.ok);
       resetPreparingWindow(live);
       // 只刷正在看的那个会话——后台会话的 todowrite 不该改屏幕上这块面板。
-      if (ok && window.MiyuTodos?.isTodoTool(tool.name)
-        && runSessionId(live.runId) === String(state.viewSessionId || "")) {
-        renderStageTodos(window.MiyuTodos.parse(output));
-      }
-      // 与回看那份同构（`createPersistedToolCard`）：待办列表挂在签外面。
-      // 只在这里画会让实时和刷新后长得不一样,那正是工具签之前踩过的坑。
+      // 08-21 token-diet:新版 todowrite 输出是一行文本(不再回显整表 JSON),
+      // parse 不出来时改从会话 todos API 取当前清单;旧 JSON 输出走原路。
       if (ok && window.MiyuTodos?.isTodoTool(tool.name)) {
-        const todos = window.MiyuTodos.render(output);
-        tool.card.querySelector(".todo-panel")?.remove();
-        if (todos) tool.card.appendChild(todos);
+        const parsed = window.MiyuTodos.parse(output);
+        const sameSession = runSessionId(live.runId) === String(state.viewSessionId || "");
+        if (parsed) {
+          if (sameSession) renderStageTodos(parsed);
+          // 与回看那份同构（`createPersistedToolCard`）：待办列表挂在签外面。
+          // 只在这里画会让实时和刷新后长得不一样,那正是工具签之前踩过的坑。
+          const todos = window.MiyuTodos.renderList(parsed);
+          tool.card.querySelector(".todo-panel")?.remove();
+          if (todos) tool.card.appendChild(todos);
+        } else {
+          attachLiveTodoPanel(tool, live, sameSession);
+        }
       }
       // 分享附件同坑同修:实时完成时也要挂,否则只有刷新后才能看到卡片。
       if (ok && window.MiyuShared?.isShareTool(tool.name)) {
@@ -7629,6 +7709,15 @@
         if (shared) tool.card.appendChild(shared);
       }
       scheduleCommandOutputPreview(tool, data?.preview);
+      if (tool.imagePlaceholder) {
+        stopImageGenDots(tool.imagePlaceholder);
+        // 失败不留空气泡(08-22 用户反馈):撤占位、露芯片,错误细节在芯片里。
+        tool.imagePlaceholder.remove();
+        tool.imagePlaceholder = null;
+      }
+      if (tool.isImageTool && !ok) {
+        tool.card.classList.remove("image-tool-chip");
+      }
       updateToolStatus(tool, ok ? "完成" : "失败", ok ? "check" : "circle-alert", ok ? "is-success" : "is-failure");
       updateToolSummary(tool);
       if (tool.liveProgress) {
