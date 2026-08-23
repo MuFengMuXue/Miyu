@@ -108,3 +108,10 @@ stub 行瘦身：35 个 stub 每行 ~40 tok，`(stub entry, e.g. {...})` 后缀�
 ## 验收方式
 
 改动前后各跑一次 `token_diet_baseline` 量尺对比三模式 tok 数；输出侧用 stub-LLM 测具跑 todowrite/load_tools 回合对比 tool result 字节；1637 项全量测试绿。
+
+## 归档说明（08-23）
+
+本目录的工作稿（描述编辑稿 / schema 审计表 / 统一化与文风方案 / 输出全量分析 / schema dump）已随专项收官删除，定论收敛于仓库根 AGENTS.md《项目注意事项》与本文执行日志。仍有约束力的遗留对照：
+
+- 输出改造缓做名单：generate_image / search_web_images（投递管线依赖结构字段）、deep_research（内部管线单独评估）；"结构即功能"留 JSON 清单：写入类工具（edit/kb/artifact 的 ok/files）、artifact 发布、ask_question、read_clipboard、share_file、send_message_to_user、goal 三件、alarm/manage_skill/manage_meme 等 CRUD 确认。
+- schema 用户裁定改留：run_command.title、task.max_steps / resume_id、manage_script 加载策略三参数。
