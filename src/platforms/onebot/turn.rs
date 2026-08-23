@@ -535,6 +535,10 @@ pub(in crate::platforms::onebot) async fn build_and_run_turn(
         // reply_to 语义:被引消息是旧消息、作者是 reply_to 里的人、不是说给
         // 你的话——不解释这三点,模型会把引用内容当成当前对话里别人对它说
         // 的新话(用户 08-20 实测点名)。会话级常量,不掰缓存。
+        // 回复定向(08-23 实锤:被"现在咋这么慢"触发的回合开场去研究历史里的
+        // AUR 话题)。这条曾内联在本轮消息块里,因随化石重放造成跨轮语义错乱
+        // 而被删——放 system 常量既不化石也不掰缓存,是它唯一正确的位置。
+        "<qq-reply-target>Answer the messages under [New messages received this turn]. [Prior group chat records] is background you have already seen; never pick topics from it to answer on their own.</qq-reply-target>".to_string(),
         // 08-21 文风批:精简 ~25%,三个语义点(旧消息/作者是 reply_to 里的人/
         // 不是说给你的)一个不丢。
         "<qq-reply-format>When message.reply_to appears in <qq-request-context>, the current sender is quoting that earlier message as context. reply_to.text was written earlier by the user identified in reply_to (sender_principal / sender_display_name), not by the current sender. It is not addressed to you and is not part of the current message. Only the text outside reply_to is what the current sender says now.</qq-reply-format>".to_string(),
