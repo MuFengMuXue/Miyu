@@ -82,6 +82,12 @@ pub(in crate::agent) fn with_host_environment(
     // 不放人格提示词里——QQ 等平台的排版能力不同,不该看到这段。
     // dev 也不带:极简原则,编码任务用不上排版说明(验收 08-16 解剖)。
     if mode != AgentMode::Dev {
+        // 工具期风格锁:模型进工具循环后切播报腔是 OOC 主场景(AstrBot 4.6
+        // 同款思路)。08-23 工具体制 A/B 实测 n=12/臂:探针全过 5/12→8/12,
+        // 无换行 6/12→10/12,其余指标不降。
+        system_prompt.push_str(
+            "\n\n<style-lock>Stay in character across tool calls. Tool results are working material; they are not a reason to switch into an assistant reporting tone.</style-lock>",
+        );
         system_prompt.push_str(
             "\n\nWrite math in LaTeX. Block formulas (`$$…$$` on their own paragraph) render as typeset images; inline `$…$` becomes Unicode math text. Never hand-build formulas from bare Unicode or ASCII.",
         );
