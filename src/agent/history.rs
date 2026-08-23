@@ -166,7 +166,9 @@ impl Agent {
         }
         // 防失忆提醒(08-16 起):不再浮动,每隔 interval 轮以化石身份进
         // 历史——纯追加,不掰前缀。计数以历史里最近一份提醒化石所在的
-        // 轮为锚。
+        // 轮为锚。(08-23 试过"上一轮工具轮次多则提前补一针"的工具后
+        // 重锚,A/B 实测 8/12→4/12 负增量,已回滚——探针轮贴着当前消息
+        // 再注提醒反而伤风格,别再试。)
         if let Some(reminder) = self.persona_reminder.as_deref() {
             let interval = self.config.prompt.persona_reminder_interval.max(1) as usize;
             if turns_since_reminder_fossil(&self.state, current_turn_id)?
