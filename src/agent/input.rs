@@ -77,6 +77,17 @@ impl Agent {
             self.tools_enabled && self.tools.lock().unwrap().contains("vision_analyze");
         let input = rewrite_image_placeholders_with_paths(&input, &absolute_image_paths);
         let current_model_supports_vision = self.current_model_supports_vision();
+        // Path 形态的图(shell-hook 跨进程、REPL 粘贴路径)在视觉模型
+        // 在场时同样内联直读,和 Binary 对齐;读不出来(不存在/超限/
+        // 非图片扩展名)的静默落回 vision_analyze 提示兜底。
+        let inline_path_urls: Vec<String> = if current_model_supports_vision {
+            path_images
+                .iter()
+                .filter_map(|path| crate::tools::vision::local_image_data_url(path).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
         let content = if !binary_images.is_empty() && !current_model_supports_vision {
             self.describe_images_with_vision_provider(&input, &binary_images)
                 .await?
@@ -84,7 +95,9 @@ impl Agent {
             input
         };
 
-        let message = if !binary_images.is_empty() && current_model_supports_vision {
+        let message = if (!binary_images.is_empty() || !inline_path_urls.is_empty())
+            && current_model_supports_vision
+        {
             let mut parts = vec![ChatContentPart::Text {
                 text: content.clone(),
             }];
@@ -93,6 +106,13 @@ impl Agent {
                     url: image.data_url().to_string(),
                 },
             }));
+            parts.extend(
+                inline_path_urls
+                    .into_iter()
+                    .map(|url| ChatContentPart::ImageUrl {
+                        image_url: ImageUrlContent { url },
+                    }),
+            );
             ChatMessage::user_parts(parts)
         } else {
             ChatMessage::plain("user", &content)

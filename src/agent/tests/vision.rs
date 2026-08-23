@@ -289,3 +289,70 @@ fn binary_image_cache_is_isolated_by_platform() {
     assert!(clipboard_path.is_file());
     assert_ne!(platform_path, clipboard_path);
 }
+
+/// Path 形态图片(shell-hook/粘贴路径)在视觉模型在场时内联直读,与
+/// Binary 对齐;路径读不出来则不产 image part,落回纯文本+工具提示。
+/// 退回 input.rs 的 inline_path_urls 前,第一段断言会报红。
+#[tokio::test]
+async fn path_images_are_inlined_when_model_supports_vision() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let mut config = AppConfig::default();
+    let provider = config
+        .providers
+        .iter_mut()
+        .find(|provider| !provider.is_claude_code())
+        .unwrap();
+    provider.model_modalities.insert(
+        provider.default_model.clone(),
+        vec!["text".to_string(), "image".to_string()],
+    );
+    let image_path = temp.path().join("shot.png");
+    std::fs::write(&image_path, b"fake png bytes").unwrap();
+
+    let state = StateStore::new(&paths).unwrap();
+    let client =
+        OpenAiCompatibleClient::new(config.provider(None).unwrap(), &config, &paths).unwrap();
+    let agent = Agent::new(
+        config,
+        &paths,
+        state,
+        client,
+        ToolRegistry::new(),
+        AgentMode::Normal,
+    )
+    .unwrap();
+
+    let prepared = agent
+        .prepare_user_input(
+            "看看这张图 [Image 1]",
+            &[Some(crate::clipboard::PastedImage::Path(
+                image_path.display().to_string(),
+            ))],
+        )
+        .await
+        .unwrap();
+    let parts = match prepared.message.content.as_ref() {
+        Some(ChatContent::Parts(parts)) => parts,
+        other => panic!("expected parts message, got {other:?}"),
+    };
+    assert!(parts.iter().any(|part| matches!(
+        part,
+        ChatContentPart::ImageUrl { image_url } if image_url.url.starts_with("data:image/png;base64,")
+    )));
+
+    // 路径不存在:不内联,退回纯文本消息。
+    let prepared = agent
+        .prepare_user_input(
+            "看看这张图 [Image 1]",
+            &[Some(crate::clipboard::PastedImage::Path(
+                temp.path().join("missing.png").display().to_string(),
+            ))],
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        prepared.message.content.as_ref(),
+        Some(ChatContent::Text(_))
+    ));
+}

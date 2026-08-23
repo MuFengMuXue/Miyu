@@ -42,9 +42,10 @@ pub fn register(
             "type": "object",
             "properties": {
                 "image": { "type": "string", "description": "Local image path or http(s) image URL." },
+                "images": { "type": "array", "items": { "type": "string" }, "description": "Several images to analyze in one call (paths or URLs). Overrides image." },
                 "prompt": { "type": "string", "description": "Question or instruction for image analysis. Defaults to a concise description." }
             },
-            "required": ["image"],
+            "required": [],
             "additionalProperties": false
         }),
         move |args| {
@@ -151,9 +152,10 @@ fn register_scoped(
             "type": "object",
             "properties": {
                 "image": { "type": "string", "description": "A path listed in this turn's image prompt, or a historical image ID such as context_image_1." },
+                "images": { "type": "array", "items": { "type": "string" }, "description": "Several images to analyze in one call. Overrides image." },
                 "prompt": { "type": "string", "description": "Question or instruction for the image analysis. Defaults to a concise description." }
             },
-            "required": ["image"],
+            "required": [],
             "additionalProperties": false
         }),
         move |args| {
@@ -173,7 +175,120 @@ fn register_scoped(
     );
 }
 
+/// `images` 数组非空时返回目标列表;否则 None=单图路径。
+fn batch_targets(args: &Value) -> Option<Vec<String>> {
+    let list = args.get("images")?.as_array()?;
+    let targets: Vec<String> = list
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect();
+    (!targets.is_empty()).then_some(targets)
+}
+
+/// 批内并发上限。视觉供应商单请求秒级,4 路已把 7 张图压进两个批次;
+/// 再高容易撞中转限流。
+const VISION_BATCH_CONCURRENCY: usize = 4;
+
+type VisionJob = std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>>;
+
+/// 每个目标合成单图参数交给 `make_job`,保序有界并发,汇总为分节文本。
+/// 单张失败不掀整批,该节记 ERROR(纯文本输出=按成功处理,错误信息模型
+/// 自己看得懂)。
+async fn run_vision_batch(
+    targets: Vec<String>,
+    prompt: Option<Value>,
+    make_job: impl Fn(Value) -> VisionJob,
+) -> Result<String> {
+    use futures_util::StreamExt;
+    let jobs: Vec<VisionJob> = targets
+        .iter()
+        .map(|target| {
+            let mut sub = json!({ "image": target });
+            if let Some(prompt) = &prompt {
+                sub["prompt"] = prompt.clone();
+            }
+            make_job(sub)
+        })
+        .collect();
+    let results: Vec<Result<String>> = futures_util::stream::iter(jobs)
+        .buffered(VISION_BATCH_CONCURRENCY)
+        .collect()
+        .await;
+    let sections = targets
+        .iter()
+        .zip(results)
+        .enumerate()
+        .map(|(index, (target, result))| match result {
+            Ok(analysis) => format!("[Image {}] {}
+{}", index + 1, target, analysis.trim()),
+            Err(error) => format!("[Image {}] {}
+ERROR: {:#}", index + 1, target, error),
+        })
+        .collect::<Vec<_>>();
+    Ok(sections.join("
+
+"))
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    #[test]
+    fn batch_targets_requires_non_empty_array() {
+        assert!(batch_targets(&json!({"image": "a.png"})).is_none());
+        assert!(batch_targets(&json!({"images": []})).is_none());
+        assert!(batch_targets(&json!({"images": ["  "]})).is_none());
+        assert_eq!(
+            batch_targets(&json!({"images": ["a.png", " b.png "]})).unwrap(),
+            vec!["a.png".to_string(), "b.png".to_string()]
+        );
+    }
+
+    /// 批量输出保序分节;单张失败记 ERROR 不掀整批;prompt 透传给每张。
+    #[tokio::test]
+    async fn vision_batch_keeps_order_and_isolates_failures() {
+        let targets = vec!["one.png".to_string(), "two.png".to_string(), "three.png".to_string()];
+        let output = run_vision_batch(
+            targets,
+            Some(Value::String("what is it".to_string())),
+            |sub| {
+                Box::pin(async move {
+                    let image = sub["image"].as_str().unwrap().to_string();
+                    assert_eq!(sub["prompt"].as_str(), Some("what is it"));
+                    if image == "two.png" {
+                        bail!("boom")
+                    }
+                    Ok(format!("desc of {image}"))
+                })
+            },
+        )
+        .await
+        .unwrap();
+        let sections: Vec<&str> = output.split("\n\n").collect();
+        assert_eq!(sections.len(), 3);
+        assert!(sections[0].starts_with("[Image 1] one.png\ndesc of one.png"));
+        assert!(sections[1].starts_with("[Image 2] two.png\nERROR: boom"));
+        assert!(sections[2].starts_with("[Image 3] three.png\ndesc of three.png"));
+    }
+}
+
 async fn analyze_image(args: Value, config: AppConfig, paths: MiyuPaths) -> Result<String> {
+    if let Some(targets) = batch_targets(&args) {
+        let prompt = args.get("prompt").cloned();
+        return run_vision_batch(targets, prompt, |sub| {
+            let config = config.clone();
+            let paths = paths.clone();
+            Box::pin(async move { analyze_image_one(sub, config, paths).await })
+        })
+        .await;
+    }
+    analyze_image_one(args, config, paths).await
+}
+
+async fn analyze_image_one(args: Value, config: AppConfig, paths: MiyuPaths) -> Result<String> {
     let vision = &config.plugins.vision;
     if !vision.enabled {
         bail!("vision plugin is disabled")
@@ -184,7 +299,7 @@ async fn analyze_image(args: Value, config: AppConfig, paths: MiyuPaths) -> Resu
         .unwrap_or_default()
         .trim();
     if image.is_empty() {
-        bail!("image is required")
+        bail!("image (or images) is required")
     }
     let prompt = args
         .get("prompt")
@@ -321,13 +436,32 @@ async fn analyze_scoped_image(
     paths: MiyuPaths,
     state: Arc<ScopedVisionState>,
 ) -> Result<String> {
+    if let Some(targets) = batch_targets(&args) {
+        let prompt = args.get("prompt").cloned();
+        return run_vision_batch(targets, prompt, |sub| {
+            let config = config.clone();
+            let paths = paths.clone();
+            let state = state.clone();
+            Box::pin(async move { analyze_scoped_image_one(sub, config, paths, state).await })
+        })
+        .await;
+    }
+    analyze_scoped_image_one(args, config, paths, state).await
+}
+
+async fn analyze_scoped_image_one(
+    args: Value,
+    config: AppConfig,
+    paths: MiyuPaths,
+    state: Arc<ScopedVisionState>,
+) -> Result<String> {
     let image = args
         .get("image")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim();
     if image.is_empty() {
-        bail!("image is required")
+        bail!("image (or images) is required")
     }
     if state.calls.fetch_add(1, Ordering::AcqRel) >= MAX_SCOPED_VISION_CALLS {
         bail!("vision_analyze call limit reached for the current platform turn")
@@ -354,14 +488,14 @@ async fn analyze_scoped_image(
         return Ok(result);
     }
     if state.allow_general_access {
-        return analyze_image(args, config, paths).await;
+        return analyze_image_one(args, config, paths).await;
     }
     if image.starts_with("http://") || image.starts_with("https://") {
         // QQ avatar URLs are built by our own tools from numeric IDs
         // (fixed host, digits-only parameters), so admitting them opens
         // no injection or exfiltration surface.
         if crate::platform_types::is_trusted_avatar_url(image) {
-            return analyze_image(args, config, paths).await;
+            return analyze_image_one(args, config, paths).await;
         }
         bail!("only images attached to the current platform turn are allowed")
     }
@@ -506,7 +640,7 @@ fn vision_client(config: &AppConfig, paths: &MiyuPaths) -> Result<OpenAiCompatib
     OpenAiCompatibleClient::new(&provider, config, paths)
 }
 
-fn local_image_data_url(value: &str) -> Result<String> {
+pub(crate) fn local_image_data_url(value: &str) -> Result<String> {
     let path = expand_path(value);
     let metadata = std::fs::metadata(&path)
         .with_context(|| format!("failed to stat image {}", path.display()))?;

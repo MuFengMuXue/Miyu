@@ -579,16 +579,10 @@ pub(in crate::cli) fn read_repl_input(
                     match crate::clipboard::read_clipboard() {
                         Ok(crate::clipboard::ClipboardContent::Image(img)) => {
                             let index = pasted_images.len() + 1;
-                            let placeholder = match img.write_temp_file(&paths.cache_dir, index) {
-                                Ok(path) => {
-                                    let filename = path
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("image");
-                                    format!("[Image {}: {}]", index, filename)
-                                }
-                                Err(_) => format!("[Image {}]", index),
-                            };
+                            // 占位符只认序号,文件名纯属显示噪音(模型侧路径
+                            // 由 rewrite_image_placeholders_with_paths 另拼)。
+                            let _ = img.write_temp_file(&paths.cache_dir, index);
+                            let placeholder = format!("[Image {}]", index);
                             insert_str_at_cursor(&mut input, &mut cursor, &placeholder);
                             history_clean_index = None;
                             pasted_images.push(Some(crate::clipboard::PastedImage::Binary(img)));
@@ -605,11 +599,7 @@ pub(in crate::cli) fn read_repl_input(
                         }
                         Ok(crate::clipboard::ClipboardContent::ImagePath(path)) => {
                             let index = pasted_images.len() + 1;
-                            let filename = std::path::Path::new(&path)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("image");
-                            let placeholder = format!("[Image {}: {}]", index, filename);
+                            let placeholder = format!("[Image {}]", index);
                             insert_str_at_cursor(&mut input, &mut cursor, &placeholder);
                             history_clean_index = None;
                             pasted_images.push(Some(crate::clipboard::PastedImage::Path(path)));

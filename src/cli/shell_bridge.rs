@@ -22,12 +22,46 @@ pub(in crate::cli) fn remove_shell_hooks(paths: &MiyuPaths) -> Result<()> {
     Ok(())
 }
 
+/// 在图片所在目录为 `<32hex>.<ext>` 建 `<8hex>.<ext>` 软链,返回短名。
+fn short_image_link(path: &std::path::Path, filename: &str) -> Result<String> {
+    let (stem, ext) = filename
+        .rsplit_once('.')
+        .ok_or_else(|| anyhow::anyhow!("no extension"))?;
+    if stem.len() <= 8 {
+        return Ok(filename.to_string());
+    }
+    let short_name = format!("{}.{}", &stem[..8], ext);
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("no parent dir"))?;
+    let link = dir.join(&short_name);
+    let target = std::path::Path::new(filename);
+    let up_to_date = std::fs::read_link(&link)
+        .map(|existing| existing == target)
+        .unwrap_or(false);
+    if !up_to_date {
+        if link.exists() || link.is_symlink() {
+            std::fs::remove_file(&link)?;
+        }
+        std::os::unix::fs::symlink(target, &link)?;
+    }
+    Ok(short_name)
+}
+
 pub(in crate::cli) fn run_clipboard_paste(paths: &MiyuPaths) -> Result<()> {
     match crate::clipboard::read_clipboard() {
         Ok(crate::clipboard::ClipboardContent::Image(img)) => {
             let path = img.write_temp_file(&paths.cache_dir, 0)?;
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("image");
-            print!("[Image 1: {}]", filename);
+            // 占位符里的文件名是跨进程找回图片的唯一线索,删不得;但 32 位
+            // 哈希名太吵,给它建个 8 位短名软链,占位符打短名,解析端按名
+            // 拼路径照样能打开。同前缀撞名就覆盖软链——同目录会定期清理,
+            // 真撞上也只是指向最新一张。
+            let display_name = match short_image_link(&path, filename) {
+                Ok(name) => name,
+                Err(_) => filename.to_string(),
+            };
+            print!("[Image 1: {}]", display_name);
             io::stdout().flush()?;
             Ok(())
         }
@@ -191,4 +225,29 @@ pub(in crate::cli) fn expand_shell_pasted_text_placeholders(
     }
     expanded.extend(&chars[last_end..]);
     Ok(expanded)
+}
+
+#[cfg(test)]
+mod short_link_tests {
+    use super::*;
+
+    /// 短链软链:32 位哈希名得到 8 位短名软链且指向原文件;重复调用幂等;
+    /// 本来就短的名字原样返回不建链。
+    #[test]
+    fn short_image_link_creates_idempotent_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let filename = "552921ce0e9994cb6d412899365c87a1.png";
+        let path = temp.path().join(filename);
+        std::fs::write(&path, b"png").unwrap();
+        let short = short_image_link(&path, filename).unwrap();
+        assert_eq!(short, "552921ce.png");
+        let link = temp.path().join(&short);
+        assert_eq!(std::fs::read(&link).unwrap(), b"png");
+        // 幂等:再来一次不报错、还指向同处。
+        assert_eq!(short_image_link(&path, filename).unwrap(), "552921ce.png");
+        // 短名原样返回。
+        let short_file = temp.path().join("cat.png");
+        std::fs::write(&short_file, b"x").unwrap();
+        assert_eq!(short_image_link(&short_file, "cat.png").unwrap(), "cat.png");
+    }
 }

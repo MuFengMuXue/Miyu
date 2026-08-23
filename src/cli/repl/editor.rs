@@ -411,16 +411,9 @@ impl LiveReplEditor {
         match crate::clipboard::read_clipboard() {
             Ok(crate::clipboard::ClipboardContent::Image(image)) => {
                 let index = self.pasted_images.len() + 1;
-                let placeholder = match image.write_temp_file(&paths.cache_dir, index) {
-                    Ok(path) => {
-                        let filename = path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or("image");
-                        format!("[Image {index}: {filename}]")
-                    }
-                    Err(_) => format!("[Image {index}]"),
-                };
+                // 占位符只认序号,文件名不进输入框(模型侧路径另拼)。
+                let _ = image.write_temp_file(&paths.cache_dir, index);
+                let placeholder = format!("[Image {index}]");
                 insert_str_at_cursor(&mut self.input, &mut self.cursor, &placeholder);
                 self.pasted_images
                     .push(Some(crate::clipboard::PastedImage::Binary(image)));
@@ -428,14 +421,10 @@ impl LiveReplEditor {
             }
             Ok(crate::clipboard::ClipboardContent::ImagePath(path)) => {
                 let index = self.pasted_images.len() + 1;
-                let filename = std::path::Path::new(&path)
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("image");
                 insert_str_at_cursor(
                     &mut self.input,
                     &mut self.cursor,
-                    &format!("[Image {index}: {filename}]"),
+                    &format!("[Image {index}]"),
                 );
                 self.pasted_images
                     .push(Some(crate::clipboard::PastedImage::Path(path)));
