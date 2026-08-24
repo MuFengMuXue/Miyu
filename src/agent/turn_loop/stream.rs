@@ -29,9 +29,7 @@ impl Agent {
         if matches!(
             crate::tools::workspace::current_turn_origin(),
             crate::tools::workspace::TurnOrigin::Human
-        ) {
-            self.repeat_chain.reset();
-        }
+        ) {}
         let prepared = self.prepare_user_input(input, images).await?;
         let input = prepared.content.clone();
         let turn_id = format!(

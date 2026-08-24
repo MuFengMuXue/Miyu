@@ -232,7 +232,7 @@ impl Agent {
             // dsh 形态回放:每轮 assistant 带原生 tool_calls(参数原样字节),
             // 随后各 call 的 role:"tool" 输出;最终回复照旧收尾。老回合
             // (无结构化流)退回 private_tool_memory 压扁兜底。
-            for round in turn.tool_flow.iter().filter(|round| !round.remote) {
+            for round in replay_rounds(&turn.tool_flow) {
                 push_assistant_message_with_reasoning(
                     messages,
                     round.assistant_content.clone(),

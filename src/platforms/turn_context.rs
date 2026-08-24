@@ -380,6 +380,27 @@ impl PlatformTurnContext {
     }
 
     pub(crate) async fn send(&self, mut message: OutboundMessage) -> Result<SendReceipt> {
+        // 工具模板泄漏过滤:模型复读退化时会把 <tool_call>/<function=> 模板
+        // 当正文吐出(08-23 取证),剥掉泄漏 span,剥空就整条抑制。
+        if matches!(
+            message.origin,
+            OutboundOrigin::FinalReply | OutboundOrigin::IntermediateReply | OutboundOrigin::Tool
+        ) && strip_tool_call_leaks(&mut message)
+        {
+            tracing::warn!(
+                platform = %self.conversation.platform,
+                conversation_kind = self.conversation.kind.as_str(),
+                conversation_id = %self.conversation.conversation_id,
+                "{}",
+                crate::i18n::text(
+                    "stripped a leaked tool-call template from an outgoing reply",
+                    "已从出站回复中剥离泄漏的工具调用模板",
+                )
+            );
+            if !message_has_deliverable_content(&message) {
+                return Ok(SendReceipt::default());
+            }
+        }
         if matches!(
             message.origin,
             OutboundOrigin::FinalReply | OutboundOrigin::IntermediateReply | OutboundOrigin::Tool

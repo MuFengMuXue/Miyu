@@ -652,3 +652,51 @@ fn reply_text_gate_blocks_paraphrase_variants_only() {
         "短文本不设闸"
     );
 }
+
+/// 工具模板泄漏剥离(08-23 取证形态):完整 <tool_call> 块、缺闭合的流式
+/// 截断残模板、裸 <function=> span 全剥;夹在正常文字中间只剥模板保留文
+/// 字;剥空+纯 mention = 无可投递内容;干净文本一个字节不动。
+#[test]
+fn tool_call_template_leaks_are_stripped_from_outgoing_replies() {
+    let leak = "@雾雨凝霜 <tool_call>\n<function=web_search>\n<parameter=query>debian nvidia</parameter>\n</function>\n</tool_call>";
+    let mut message = OutboundMessage::segments(
+        OutboundOrigin::FinalReply,
+        vec![
+            OutboundSegment::Mention("123".to_string()),
+            OutboundSegment::Markdown(leak.to_string()),
+        ],
+    );
+    assert!(strip_tool_call_leaks(&mut message));
+    // "@雾雨凝霜 " 是模型正文里的裸文本而非 Mention 段,剥掉模板后只剩它
+    // 加空白;这里它随段保留,但真实泄漏消息里正文只有模板 → 段被移除。
+    let mut pure = OutboundMessage::segments(
+        OutboundOrigin::FinalReply,
+        vec![
+            OutboundSegment::Mention("123".to_string()),
+            OutboundSegment::Markdown(
+                "<tool_call>\n<function=vision_analyze>\n<parameter=image>/tmp/a.png</parameter>\n</function>\n</tool_call>".to_string(),
+            ),
+        ],
+    );
+    assert!(strip_tool_call_leaks(&mut pure));
+    assert!(!message_has_deliverable_content(&pure));
+
+    // 流式截断:没有闭合标签,剥到结尾,保留前面的真实回复。
+    let mut truncated = OutboundMessage::text(
+        OutboundOrigin::FinalReply,
+        "先说结论:开源内核模块就行。<tool_call>\n<function=web_search>\n<parameter=query>又来",
+    );
+    assert!(strip_tool_call_leaks(&mut truncated));
+    assert!(message_has_deliverable_content(&truncated));
+    let OutboundBody::Segments(segments) = &truncated.body else {
+        panic!("expected segments")
+    };
+    let OutboundSegment::Text(text) = &segments[0] else {
+        panic!("expected text")
+    };
+    assert_eq!(text, "先说结论:开源内核模块就行。");
+
+    // 干净文本零改动。
+    let mut clean = OutboundMessage::text(OutboundOrigin::FinalReply, "正常回复,不含模板。");
+    assert!(!strip_tool_call_leaks(&mut clean));
+}

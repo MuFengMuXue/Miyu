@@ -79,6 +79,74 @@ pub(crate) fn apply_resolved_response_target(
     }
 }
 
+/// 剥掉模型漏进正文通道的工具调用模板(08-23 线上取证:mimo 系复读退化
+/// 时把 `<tool_call><function=...>` 当文本吐出,中转解析器不认就落进
+/// content,QQ 分段投递原样发到群里)。返回 true = 有段被改写或移除;剥完
+/// 没有任何文本/媒体段的消息由调用方整条抑制。
+pub(crate) fn strip_tool_call_leaks(message: &mut OutboundMessage) -> bool {
+    let OutboundBody::Segments(segments) = &mut message.body else {
+        return false;
+    };
+    let mut changed = false;
+    segments.retain_mut(|segment| match segment {
+        OutboundSegment::Markdown(part) | OutboundSegment::Text(part) => {
+            let Some(stripped) = strip_leak_spans(part) else {
+                return true;
+            };
+            changed = true;
+            if stripped.trim().is_empty() {
+                false
+            } else {
+                *part = stripped;
+                true
+            }
+        }
+        _ => true,
+    });
+    changed
+}
+
+/// 剥完后还有没有值得投递的内容(纯 Mention 不算)。
+pub(crate) fn message_has_deliverable_content(message: &OutboundMessage) -> bool {
+    let OutboundBody::Segments(segments) = &message.body else {
+        return true;
+    };
+    segments.iter().any(|segment| match segment {
+        OutboundSegment::Markdown(part) | OutboundSegment::Text(part) => !part.trim().is_empty(),
+        OutboundSegment::Mention(_) => false,
+        _ => true,
+    })
+}
+
+/// 移除文本里的 `<tool_call>…</tool_call>` 与裸 `<function=…</function>`
+/// span(缺闭合标签=剥到结尾,流式截断的残模板就是这个形态)。
+/// None = 文本干净没动。
+fn strip_leak_spans(text: &str) -> Option<String> {
+    const SPANS: [(&str, &str); 2] = [
+        ("<tool_call>", "</tool_call>"),
+        ("<function=", "</function>"),
+    ];
+    let mut output = text.to_string();
+    let mut changed = false;
+    loop {
+        let Some((start, open, close)) = SPANS
+            .iter()
+            .filter_map(|(open, close)| output.find(open).map(|at| (at, *open, *close)))
+            .min_by_key(|(at, _, _)| *at)
+        else {
+            break;
+        };
+        let _ = open;
+        let end = output[start..]
+            .find(close)
+            .map(|at| start + at + close.len())
+            .unwrap_or(output.len());
+        output.replace_range(start..end, "");
+        changed = true;
+    }
+    changed.then_some(output)
+}
+
 pub(crate) fn message_is_parenthetical_only(message: &OutboundMessage) -> bool {
     let OutboundBody::Segments(segments) = &message.body else {
         return false;

@@ -6,6 +6,63 @@ use crate::config::AppConfig;
 use crate::tools::{empty_parameters, ToolSpec};
 use tokio::net::TcpListener;
 
+/// 复读毒料免疫(08-24):历史 tool_flow 里连续同参轮只回放第一轮——
+/// 122 轮 111 重复的会话曾把模型锁进 in-context 复读。不同参轮照常全放。
+/// 退回 replay_rounds 折叠前,第一段断言(2 个调用轮)会报红为 4。
+#[test]
+fn consecutive_identical_history_rounds_collapse_on_replay() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let config = AppConfig::default();
+    let state = StateStore::new(&paths).unwrap();
+    state.start_turn("old", "查一下", 999_999).unwrap();
+    let round = |args: &str, output: &str| crate::state::ToolFlowRound {
+        remote: false,
+        assistant_content: String::new(),
+        assistant_reasoning: None,
+        calls: vec![crate::state::ToolFlowCall {
+            id: "c".to_string(),
+            name: "web_search".to_string(),
+            arguments: args.to_string(),
+            output: output.to_string(),
+        }],
+    };
+    state
+        .set_turn_tool_flow(
+            "old",
+            &[
+                round("{\"q\":\"a\"}", "r1"),
+                round("{\"q\":\"a\"}", "r2"),
+                round("{\"q\":\"a\"}", "r3"),
+                round("{\"q\":\"b\"}", "r4"),
+            ],
+        )
+        .unwrap();
+    state.complete_turn("old", "查完了", None).unwrap();
+    let client =
+        OpenAiCompatibleClient::new(config.provider(None).unwrap(), &config, &paths).unwrap();
+    let agent = Agent::new(
+        config,
+        &paths,
+        state,
+        client,
+        ToolRegistry::new(),
+        AgentMode::Normal,
+    )
+    .unwrap();
+
+    let messages = agent.chat_messages("current", "继续").unwrap().0;
+    let tool_call_rounds = messages
+        .iter()
+        .filter(|m| m.tool_calls.as_ref().is_some_and(|c| !c.is_empty()))
+        .count();
+    assert_eq!(tool_call_rounds, 2, "连续同参轮应折叠成 1+1");
+    // 保留的是首轮的真实结果字节;重复轮的 r2/r3 不再出现。
+    let text = format!("{messages:?}");
+    assert!(text.contains("r1") && text.contains("r4"));
+    assert!(!text.contains("r2") && !text.contains("r3"));
+}
+
 /// 剪枝必须幂等:第二次扫过不能再改写,否则每次落库都掰一次前缀。
 #[test]
 fn tool_result_pruning_is_bounded_and_idempotent() {

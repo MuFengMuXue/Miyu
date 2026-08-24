@@ -334,6 +334,31 @@ pub(in crate::agent) fn prune_tool_flow(
     }
 }
 
+/// 回放视图:连续同签名(整轮的 名字+参数 序列相同)的轮只保留第一轮。
+/// 复读轮是端点故障窗口的毒料,原样回放会教模型继续复读——08-24 取证:
+/// 一个群会话积累 122 个历史工具调用、111 个纯重复(60×同一 web_search),
+/// in-context 模式锁死后温度 0.6 也会产出逐字节相同的补全。确定性折叠
+/// =字节稳定;上线是一次计划内冷启动,此后该会话前缀反而大幅变短。
+pub(in crate::agent) fn replay_rounds(
+    flow: &[crate::state::ToolFlowRound],
+) -> Vec<&crate::state::ToolFlowRound> {
+    let mut kept: Vec<&crate::state::ToolFlowRound> = Vec::new();
+    let mut previous: Option<Vec<(&str, &str)>> = None;
+    for round in flow.iter().filter(|round| !round.remote) {
+        let signature: Vec<(&str, &str)> = round
+            .calls
+            .iter()
+            .map(|call| (call.name.as_str(), call.arguments.as_str()))
+            .collect();
+        if !signature.is_empty() && previous.as_ref() == Some(&signature) {
+            continue;
+        }
+        previous = Some(signature);
+        kept.push(round);
+    }
+    kept
+}
+
 pub(in crate::agent) fn derive_tool_flow(
     messages: &[ChatMessage],
     live_start: usize,
