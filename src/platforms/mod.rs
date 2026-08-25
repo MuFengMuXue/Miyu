@@ -7,6 +7,7 @@
 //! reuse everything here without touching the web core.
 
 mod activity;
+mod inflight;
 mod logging;
 mod reply;
 mod scheduling;

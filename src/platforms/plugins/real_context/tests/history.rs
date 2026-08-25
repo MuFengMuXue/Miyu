@@ -289,6 +289,48 @@ fn restraint_matches_deployed_medium_defaults() {
     assert_eq!(restraint_adjustments(false, "strong", 10.0), (0.0, 0.0));
 }
 
+/// 当前消息引用了别人的消息:署名行下要带 reply-to 支路(被引用者的
+/// msg id/署名/原文),模型不用再去元数据 JSON 里自行关联。
+#[test]
+fn current_message_with_quote_renders_reply_to_line() {
+    let (_temp, context) = availability_context(BotSendAvailability::Available);
+    let mut current = inbound_event();
+    current.message_id = "current".to_string();
+    current.text = "这报错咋修".to_string();
+    current.reply_to_message_id = Some("quoted-1".to_string());
+    current.replied_message = Some(crate::platforms::PlatformMessageInfo {
+        message_id: "quoted-1".to_string(),
+        sender_id: "777".to_string(),
+        sender_display_name: "截图哥".to_string(),
+        timestamp: 0,
+        text: "系统进不去了,附截图".to_string(),
+        reply_to_message_id: None,
+        mentioned_user_ids: Vec::new(),
+        mentioned_users: Vec::new(),
+        media: Vec::new(),
+        conversation_kind: None,
+        conversation_id: None,
+    });
+    set_active_targets(&context, &[]);
+
+    let prompt = active_target_prompt(&context, &current, "这报错咋修");
+    let mut lines = prompt.lines();
+    assert_eq!(lines.next(), Some("[New messages received this turn]"));
+    let head = lines.next().unwrap();
+    assert!(head.contains("[msg=current]"), "{head}");
+    let reply_line = lines.next().unwrap();
+    // 08-25 三重标记版:时态(earlier)+作者(by)+引号,弱模型不再把旧话
+    // 连读成本次发言。
+    assert!(
+        reply_line
+            .trim_start()
+            .starts_with("quoted earlier message [msg=quoted-1] by "),
+        "{reply_line}"
+    );
+    assert!(reply_line.contains("截图哥"), "{reply_line}");
+    assert!(reply_line.contains("\u{201c}系统进不去了"), "{reply_line}");
+}
+
 #[test]
 fn active_target_prompt_merges_only_the_same_sender_and_marks_history_as_background() {
     let (_temp, context) = availability_context(BotSendAvailability::Available);
@@ -316,7 +358,11 @@ fn active_target_prompt_merges_only_the_same_sender_and_marks_history_as_backgro
     assert_eq!(prompt.matches("最终当前内容").count(), 1);
     assert!(!prompt.contains("不应成为目标"));
     assert!(!prompt.contains("其他用户"));
-    assert!(prompt.starts_with("[New messages received this turn]\n最终当前内容"));
+    // 08-24 起当前消息带完整署名行(时间/发送者/msg id),不再是裸正文。
+    assert!(prompt.starts_with("[New messages received this turn]\n["));
+    let head = prompt.lines().nth(1).unwrap();
+    assert!(head.contains("[msg=current]"), "{head}");
+    assert!(head.ends_with(": 最终当前内容"), "{head}");
     assert!(prompt
         .contains("[Earlier messages from the same sender this turn, in chronological order]"));
     // 块标记只描述内容,不再夹带行为指令。

@@ -1,7 +1,7 @@
 //! 主动回复的目标选择与提示词拼装。
 
-use crate::platforms::plugins::real_context::*;
 use super::shared::*;
+use crate::platforms::plugins::real_context::*;
 
 #[test]
 fn disabled_targeting_returns_none_and_core_fallback_is_preserved_exactly() {
@@ -92,8 +92,9 @@ fn active_target_prompt_is_bounded_and_keeps_the_current_message() {
     assert!(prompt.len() <= MAX_ACTIVE_TARGET_PROMPT_BYTES);
     assert!(prompt.contains("CURRENT:"));
     assert!(prompt.contains("earlier merged messages omitted due to length limits"));
-    // 截断保留的头部是带标记的当前消息,而不是裸正文。
-    assert!(prompt.starts_with("[New messages received this turn]\nCURRENT:"));
+    // 截断保留的头部是带标记+署名行的当前消息,而不是裸正文。
+    assert!(prompt.starts_with("[New messages received this turn]\n["));
+    assert!(prompt.lines().nth(1).unwrap().contains("CURRENT:"));
 }
 
 #[test]

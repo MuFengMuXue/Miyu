@@ -1,7 +1,7 @@
 //! 触发判定与延续窗口。
 
-use crate::platforms::plugins::real_context::*;
 use super::shared::*;
+use crate::platforms::plugins::real_context::*;
 
 #[test]
 fn explicit_direct_trigger_precedes_moderation_only_candidates() {
@@ -54,11 +54,7 @@ fn continuation_window_is_inclusive_at_its_boundary() {
     session.mark_continuation("30000", started, &settings);
 
     assert!(session.continuation_match("30000", started + window, true));
-    assert!(!session.continuation_match(
-        "30000",
-        started + window + Duration::from_nanos(1),
-        true,
-    ));
+    assert!(!session.continuation_match("30000", started + window + Duration::from_nanos(1), true,));
 }
 
 #[test]
@@ -178,7 +174,10 @@ async fn correction_within_window_supersedes_committed_reply_and_moves_reactions
         .expect("补救后 pending 应保留以支持链式覆盖");
     assert!(pending.committed);
     assert_eq!(pending.targets.len(), 2);
-    assert_eq!(pending.reactions, vec![("message-2".to_string(), "289".to_string())]);
+    assert_eq!(
+        pending.reactions,
+        vec![("message-2".to_string(), "289".to_string())]
+    );
 }
 
 #[tokio::test]
@@ -223,7 +222,10 @@ async fn confirm_supersede_moves_reactions_and_restarts_the_window() {
         .expect("覆盖后 pending 应保留");
     assert!(pending.started > old_started, "补救窗口应从新消息重新起算");
     assert_eq!(pending.targets.len(), 2);
-    assert_eq!(pending.reactions, vec![("message-2".to_string(), "289".to_string())]);
+    assert_eq!(
+        pending.reactions,
+        vec![("message-2".to_string(), "289".to_string())]
+    );
 }
 
 #[tokio::test]
@@ -255,7 +257,10 @@ async fn direct_trigger_registers_a_committed_pending_for_correction() {
         .and_then(|session| session.pending.get(&event.sender_id))
         .expect("直触发应登记可被补救的 pending");
     assert!(pending.committed);
-    assert_eq!(pending.reactions, vec![("message-1".to_string(), "289".to_string())]);
+    assert_eq!(
+        pending.reactions,
+        vec![("message-1".to_string(), "289".to_string())]
+    );
 }
 
 #[tokio::test]
@@ -343,7 +348,10 @@ fn directly_triggered_image_is_a_primary_target() {
 
     let prompt = active_target_prompt(&context, &current, "（对方发送了 1 张图片）");
 
-    assert!(prompt.starts_with("[New messages received this turn]\n（对方发送了 1 张图片）"));
+    // 署名行版:纯图消息的正文槽位是占位文案,坐标信息照带。
+    assert!(prompt.starts_with("[New messages received this turn]\n["));
+    let head = prompt.lines().nth(1).unwrap();
+    assert!(head.contains("（对方发送了 1 张图片）"), "{head}");
     assert!(!prompt.contains("无明确文字目标消息"));
     assert!(!prompt.contains("同一用户随后发送的补充材料"));
 }

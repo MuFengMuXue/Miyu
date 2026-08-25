@@ -63,6 +63,8 @@ pub(crate) struct PlatformTurnContext {
     pub(crate) plugins: Arc<plugins::PlatformPluginRegistry>,
     pub(crate) config_manager: Option<Weak<Mutex<crate::runtime::ManagerState>>>,
     pub(crate) inbound_event: Option<Arc<PlatformInboundEvent>>,
+    /// 正在处理中登记的 RAII 守卫:context 掉落即注销(见 inflight 模块头)。
+    pub(crate) inflight_guard: Option<crate::platforms::inflight::InflightGuard>,
     pub(crate) message_activity: Option<MessageActivityHandle>,
     pub(crate) response_target: Mutex<Option<PendingResponseTarget>>,
     pub(crate) group_member_cache: Mutex<HashMap<String, PlatformGroupMember>>,
@@ -104,6 +106,7 @@ impl PlatformTurnContext {
             plugins,
             config_manager: None,
             inbound_event: None,
+            inflight_guard: None,
             message_activity: None,
             response_target: Mutex::new(None),
             group_member_cache: Mutex::new(HashMap::new()),
@@ -118,6 +121,10 @@ impl PlatformTurnContext {
     }
 
     pub(crate) fn with_inbound_event(mut self, event: PlatformInboundEvent) -> Self {
+        self.inflight_guard = Some(crate::platforms::inflight::InflightGuard::register(
+            self.conversation.scope_key(),
+            event.message_id.clone(),
+        ));
         self.inbound_event = Some(Arc::new(event));
         self
     }
@@ -579,14 +586,28 @@ impl PlatformTurnContext {
         if grams.len() < 16 {
             return false;
         }
-        self.delivered_reply_texts
+        if self
+            .delivered_reply_texts
             .lock()
             .unwrap()
             .iter()
             .any(|prev| bigram_jaccard(&grams, prev) >= 0.66)
+        {
+            return true;
+        }
+        // 跨回合支路(08-25 并发重复答题取证):同会话 2 分钟内投过的近似
+        // 内容拒发,阈值 0.75 比回合内更严。
+        crate::platforms::activity::recent_conversation_reply_similar(
+            &self.conversation.scope_key(),
+            text,
+        )
     }
 
     pub(crate) fn record_delivered_reply_text(&self, text: &str) {
+        crate::platforms::activity::record_recent_conversation_reply(
+            &self.conversation.scope_key(),
+            text,
+        );
         let grams = reply_text_bigrams(text);
         if grams.is_empty() {
             return;

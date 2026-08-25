@@ -29,9 +29,12 @@ pub(in crate::platforms::plugins::real_context) struct ActiveReplyDecisionLog<'a
     pub(in crate::platforms::plugins::real_context) short_message_threshold_adjustment: f64,
     pub(in crate::platforms::plugins::real_context) moderation: &'a judge::ModerationResult,
     pub(in crate::platforms::plugins::real_context) reason: &'a str,
+    pub(in crate::platforms::plugins::real_context) endpoint: Option<&'a str>,
 }
 
-pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_log(log: &ActiveReplyDecisionLog<'_>) -> String {
+pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_log(
+    log: &ActiveReplyDecisionLog<'_>,
+) -> String {
     format_active_reply_decision_log_for(log, crate::i18n::locale())
 }
 
@@ -88,6 +91,11 @@ pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_
             locale,
             text_for(locale, "Trigger", "触发"),
             log.trigger.log_label(locale),
+        ),
+        format_decision_log_field(
+            locale,
+            text_for(locale, "Model", "模型"),
+            log.endpoint.unwrap_or("unknown"),
         ),
         format_decision_log_field(
             locale,
@@ -195,7 +203,11 @@ pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_
     lines.join("\n")
 }
 
-pub(in crate::platforms::plugins::real_context) fn format_decision_log_field(locale: Locale, label: &str, value: &str) -> String {
+pub(in crate::platforms::plugins::real_context) fn format_decision_log_field(
+    locale: Locale,
+    label: &str,
+    value: &str,
+) -> String {
     if locale == Locale::Zh {
         format!("{label}：{value}")
     } else {
@@ -203,7 +215,10 @@ pub(in crate::platforms::plugins::real_context) fn format_decision_log_field(loc
     }
 }
 
-pub(in crate::platforms::plugins::real_context) fn format_log_message(message: &str, locale: Locale) -> String {
+pub(in crate::platforms::plugins::real_context) fn format_log_message(
+    message: &str,
+    locale: Locale,
+) -> String {
     let compact = message.split_whitespace().collect::<Vec<_>>().join(" ");
     if compact.is_empty() {
         return text_for(locale, "[non-text message]", "[非文本消息]").to_string();
@@ -263,7 +278,10 @@ pub(in crate::platforms::plugins::real_context) fn format_active_reply_skip_log_
     }
 }
 
-pub(in crate::platforms::plugins::real_context) fn localized_affection_level<'a>(level: &'a str, locale: Locale) -> &'a str {
+pub(in crate::platforms::plugins::real_context) fn localized_affection_level<'a>(
+    level: &'a str,
+    locale: Locale,
+) -> &'a str {
     if locale == Locale::Zh {
         return level;
     }

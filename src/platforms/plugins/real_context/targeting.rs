@@ -327,20 +327,27 @@ pub(in crate::platforms::plugins::real_context) fn active_target_prompt(
             safe_prompt_field(&content)
         );
         if let Some(message_id) = target.reply_message_id.as_ref() {
+            // 引用行的作者/时态/引号三重显式标记(08-25:管道格式 "reply-to:
+            // … | 名字 | 原文" 会被弱模型与当前消息连读,把引用内容当成本次
+            // 发言的一部分——渲染层就要把"旧话、别人说的"钉死,不能只靠
+            // <qq-reply-format> 规则自觉)。
+            let author = match (
+                target.reply_sender_name.as_ref(),
+                target.reply_sender_id.as_ref().filter(|_| show_ids),
+            ) {
+                (Some(name), Some(id)) => {
+                    format!("{}(QQ:{})", safe_prompt_field(name), safe_prompt_field(id))
+                }
+                (Some(name), None) => safe_prompt_field(name),
+                (None, Some(id)) => format!("QQ:{}", safe_prompt_field(id)),
+                (None, None) => "an earlier sender".to_string(),
+            };
             line.push_str(&format!(
-                "\n  reply-to: msg={}",
+                "\n  quoted earlier message [msg={}] by {author}",
                 safe_prompt_field(message_id)
             ));
-            if let Some(name) = target.reply_sender_name.as_ref() {
-                line.push_str(&format!(" | {}", safe_prompt_field(name)));
-            }
-            if show_ids {
-                if let Some(id) = target.reply_sender_id.as_ref() {
-                    line.push_str(&format!("(QQ:{})", safe_prompt_field(id)));
-                }
-            }
             if let Some(content) = target.reply_content.as_ref() {
-                line.push_str(&format!(" | {}", safe_prompt_field(content)));
+                line.push_str(&format!(": \u{201c}{}\u{201d}", safe_prompt_field(content)));
             }
         }
         if let Some(mentions) = format_mentioned_users(
@@ -363,7 +370,14 @@ pub(in crate::platforms::plugins::real_context) fn active_target_prompt(
         .filter(|target| target.supplemental)
         .map(format_target)
         .collect::<Vec<_>>();
-    let current = current_content.trim().to_string();
+    // 当前消息同样走 format_target:署名/时间/msg id/reply-to/@mentions 全套
+    // 坐标(08-24 取证:裸文本"卡死了？"贴在他人求助截图后,模型把 A 的问题
+    // 安到了 B 头上——判读线索被我们自己削没了)。
+    let current = targets
+        .iter()
+        .find(|target| target.message_id == event.message_id)
+        .map(&format_target)
+        .unwrap_or_else(|| current_content.trim().to_string());
     let previous = primary
         .into_iter()
         .filter(|line| !line.contains(&format!("[msg={}]", event.message_id)))
