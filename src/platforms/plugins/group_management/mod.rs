@@ -124,7 +124,10 @@ impl GroupManagementPlugin {
             json!({ "type": "string", "description": "QQ 号；可用空格或逗号分隔多个。省略时回落到 @ 或引用对象。" }),
         );
         properties.insert("reason".to_string(), json!({ "type": "string" }));
-        properties.insert("confirmation_token".to_string(), json!({ "type": "string" }));
+        properties.insert(
+            "confirmation_token".to_string(),
+            json!({ "type": "string" }),
+        );
         if allow_ban {
             properties.insert(
                 "duration_seconds".to_string(),
@@ -397,21 +400,39 @@ impl GroupManagementPlugin {
             // pattern-match a bridge's error text, and a genuine failure (an
             // unresolvable UIN, missing permission) still leaves the member in
             // place and is still reported as a failure.
-            match context.group_member_fresh(user_id).await {
-                Ok(None) => {
-                    tracing::warn!(
-                        target: "miyu::qq",
-                        user_id,
-                        error = %error,
-                        "{}",
-                        crate::i18n::text(
-                            "the kick bridge reported a failure but the member is gone; treating it as done",
-                            "踢人接口报错但成员已不在群里，按成功处理",
-                        )
-                    );
-                    bridge_error = Some(error.to_string());
+            // 08-24 追加、08-25 二版:成员表是最终一致的,snowluma 的缓存滞后
+            // 实测可超 5 秒——轮询成员表会把真成功误判成失败(批量踢人实录)。
+            // 权威判据换成 group_decrease 通知台账(踢成功 1-2 秒内必达),
+            // 成员表查询只作兜底;窗口拉到 ~5.5s,台账命中即早退。
+            let scope = context.conversation.scope_key();
+            let mut member_gone = false;
+            for attempt in 0..6u32 {
+                if attempt > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
                 }
-                _ => return failure_for_target(error, user_id),
+                if crate::platforms::activity::recent_group_removal(&scope, user_id) {
+                    member_gone = true;
+                    break;
+                }
+                if matches!(context.group_member_fresh(user_id).await, Ok(None)) {
+                    member_gone = true;
+                    break;
+                }
+            }
+            if member_gone {
+                tracing::warn!(
+                    target: "miyu::qq",
+                    user_id,
+                    error = %error,
+                    "{}",
+                    crate::i18n::text(
+                        "the kick bridge reported a failure but the member is gone; treating it as done",
+                        "踢人接口报错但成员已不在群里，按成功处理",
+                    )
+                );
+                bridge_error = Some(error.to_string());
+            } else {
+                return failure_for_target(error, user_id);
             }
         }
         let record = KickRecord {
@@ -573,7 +594,6 @@ impl GroupManagementPlugin {
         )
         .to_string())
     }
-
 }
 
 impl PlatformPlugin for Arc<GroupManagementPlugin> {
@@ -659,6 +679,11 @@ impl PlatformPlugin for Arc<GroupManagementPlugin> {
                     // the per-turn roster cache so a later kick/mute in this
                     // same turn cannot validate against a stale entry.
                     context.forget_group_member(&event.sender_id);
+                    // 移除台账:踢人核验的权威判据(成员表缓存滞后时靠它定成败)。
+                    crate::platforms::activity::record_group_removal(
+                        &context.conversation.scope_key(),
+                        &event.sender_id,
+                    );
                     if event.notice_sub_type.as_deref() != Some("kick") {
                         return Ok(());
                     }
