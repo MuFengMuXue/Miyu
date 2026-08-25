@@ -159,6 +159,9 @@ pub enum AgentEvent {
         round: Box<Usage>,
         turn: TurnTokens,
         estimated: bool,
+        /// 刚结束这次请求实际应答的端点,供日志/前端标注(08-24 需求)。
+        provider_id: Option<String>,
+        model: Option<String>,
     },
     SpinnerTick,
     CompactStart,

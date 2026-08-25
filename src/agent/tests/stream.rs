@@ -715,6 +715,7 @@ async fn round_usage_event_fires_per_model_request() {
                 round,
                 turn,
                 estimated,
+                ..
             } = &event
             {
                 rounds

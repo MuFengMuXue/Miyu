@@ -157,7 +157,19 @@ pub(in crate::platforms::onebot) async fn execute_builtin_command(
             let descriptor = commands::descriptor(commands::STOP_COMMAND_ID)
                 .expect("the stop command descriptor is registered");
             if !commands::is_allowed(&context.config.platforms, descriptor, context.is_admin) {
-                commands::permission_denied_message(&context.config.platforms, descriptor)
+                // 与 /reset 对齐:非管理员的管理命令静默忽略(08-25 用户裁定)。
+                // 回拒绝语等于向群友广播命令的存在,还给试探者反馈;日志留痕
+                // 保住管理员排查"为什么我的命令没反应"的通路。
+                tracing::info!(
+                    target: "miyu::qq",
+                    sender_id = %context.sender_id,
+                    "{}",
+                    t(
+                        "ignored /stop from a non-admin",
+                        "已静默忽略非管理员的 /stop",
+                    )
+                );
+                return None;
             } else if has_arguments {
                 commands::stop_usage_message(&context.config.platforms)
             } else {

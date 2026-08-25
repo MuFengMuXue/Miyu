@@ -6731,7 +6731,9 @@
   }
 
   // 普通 Markdown 随内容收缩；只有需要稳定横向空间的结构撑满消息列。
-  const WIDE_BLOCK_SELECTOR = ".markdown-body pre, .markdown-table-scroll, .conversation-media, .context-operation, img, .tool-card:not(.collapsed), .tool-live-progress:not([hidden])";
+  // .image-gen-bubble 必须算宽块:纯生图回合没有其他宽内容,漏掉它气泡
+  // 会收缩成 fit-content,占位方块的 70% 宽随之塌成一丁点(08-25 实录)。
+  const WIDE_BLOCK_SELECTOR = ".markdown-body pre, .markdown-table-scroll, .conversation-media, .context-operation, img, .image-gen-bubble, .tool-card:not(.collapsed), .tool-live-progress:not([hidden])";
   function syncBubbleWidth(article) {
     if (!article) return;
     const content = article.querySelector(".assistant-content");

@@ -7483,6 +7483,7 @@ body.miyu-paused *::after {
 .image-gen-bubble {
   position: relative;
   width: min(320px, 70%);
+  min-width: 220px; /* slim 收缩语境下的形状兜底 */
   aspect-ratio: 1 / 1;
   margin: 6px 0;
   border-radius: 16px;
@@ -7493,6 +7494,7 @@ body.miyu-paused *::after {
   position: relative;
   z-index: 2;
   display: inline-block;
+  white-space: nowrap; /* 任何退化宽度下 6 个字也不竖排 */
   margin: 14px 16px;
   font-size: 13px;
   color: var(--text-soft);

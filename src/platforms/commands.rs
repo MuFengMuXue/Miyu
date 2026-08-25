@@ -130,20 +130,6 @@ pub(crate) fn command_text(config: &PlatformsConfig, command: &str) -> String {
     format!("{}{}", config.command_prefix, command)
 }
 
-pub(crate) fn permission_denied_message(
-    config: &PlatformsConfig,
-    command: &PlatformCommandDescriptor,
-) -> String {
-    format!(
-        "{} {}{}",
-        t(
-            "Only platform administrators may use",
-            "只有通讯平台管理员可以使用"
-        ),
-        command_text(config, command.id),
-        t(".", "。")
-    )
-}
 
 pub(crate) fn reset_usage_message(config: &PlatformsConfig) -> String {
     usage_message(config, RESET_COMMAND_ID)

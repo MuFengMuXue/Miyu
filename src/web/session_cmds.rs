@@ -335,9 +335,13 @@ pub(in crate::web) async fn handle_session_command(
         }
         IpcCommand::SetReplSession { target } => {
             let record = resolve_available_local_session_ref(state, &target)?;
-            store
-                .set_repl_session(&record.persona, &record.session_id)
-                .map_err(|error| safe_error_message(&error))?;
+            // 终端集成会话可以切过去用(活体在 REPL 进程里),但指针不落盘:
+            // 下次启动回到上一条普通会话,而不是终端车道(08-25 用户裁定)。
+            if record.session_id != crate::state::DEFAULT_SESSION_ID {
+                store
+                    .set_repl_session(&record.persona, &record.session_id)
+                    .map_err(|error| safe_error_message(&error))?;
+            }
             Ok(json!({ "session": session_record_json(&record) }))
         }
         IpcCommand::RenameSession { target, name } => {

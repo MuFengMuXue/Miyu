@@ -497,6 +497,9 @@ pub(in crate::platforms::plugins::renderer) fn attrs_for<'a>(
         palette.muted
     } else if matches!(kind, BlockKind::Heading(_)) {
         palette.heading
+    } else if style.bold {
+        // 只有 Regular 字重可用,Weight::BOLD 是空请求——加粗靠变色呈现。
+        palette.strong
     } else {
         palette.text
     };

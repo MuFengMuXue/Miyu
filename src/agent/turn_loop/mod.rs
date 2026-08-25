@@ -409,6 +409,8 @@ impl Agent {
                     round: Box::new(round),
                     turn: TurnTokens::from_usage(Some(&turn_usage)),
                     estimated: usage_accumulator.estimated,
+                    provider_id: result.provider_id.clone(),
+                    model: result.model.clone(),
                 })?;
             }
             last_round_completed_at = Some(Instant::now());

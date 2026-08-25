@@ -27,6 +27,9 @@ pub(in crate::platforms::plugins::renderer) struct Palette {
     pub(in crate::platforms::plugins::renderer) heading: [u8; 4],
     pub(in crate::platforms::plugins::renderer) muted: [u8; 4],
     pub(in crate::platforms::plugins::renderer) link: [u8; 4],
+    /// 加粗文本的替代色:资产只带 Regular 字重(CJK 粗体一个 15MB+,低占用
+    /// 专项不背),**加粗**以变色呈现(08-25 用户裁定)。
+    pub(in crate::platforms::plugins::renderer) strong: [u8; 4],
     pub(in crate::platforms::plugins::renderer) code_background: [u8; 4],
     pub(in crate::platforms::plugins::renderer) code_text: [u8; 4],
     pub(in crate::platforms::plugins::renderer) quote_background: [u8; 4],
@@ -46,6 +49,7 @@ impl Palette {
                 heading: [255, 255, 255, 255],
                 muted: [164, 168, 176, 255],
                 link: [104, 179, 255, 255],
+                strong: [229, 192, 123, 255],
                 code_background: [43, 45, 51, 255],
                 code_text: [239, 240, 244, 255],
                 quote_background: [37, 40, 45, 255],
@@ -61,6 +65,7 @@ impl Palette {
                 heading: [18, 20, 24, 255],
                 muted: [92, 96, 104, 255],
                 link: [48, 101, 190, 255],
+                strong: [176, 112, 14, 255],
                 code_background: [226, 229, 235, 255],
                 code_text: [34, 38, 45, 255],
                 quote_background: [244, 247, 255, 255],
@@ -76,6 +81,7 @@ impl Palette {
                 heading: [37, 34, 29, 255],
                 muted: [104, 98, 88, 255],
                 link: [112, 82, 43, 255],
+                strong: [153, 88, 28, 255],
                 code_background: [225, 219, 208, 255],
                 code_text: [42, 39, 34, 255],
                 quote_background: [236, 229, 214, 255],

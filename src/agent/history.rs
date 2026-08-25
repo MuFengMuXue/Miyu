@@ -13,6 +13,9 @@ impl Agent {
         &self,
     ) -> Result<Vec<crate::state::StoredConversationEntry>> {
         let Some(context_window) = self.context_window() else {
+            // 窗口解析失败(池中任一端点 provider 未知/无窗口来源)会静默关闭
+            // 裁剪——这是 68 万 token 膨胀事故的候选路径之一,必须留痕。
+            tracing::warn!("context trim disabled: no context window could be resolved");
             return Ok(Vec::new());
         };
         let track_loaded_tool_sources = self.tools_enabled
@@ -81,6 +84,22 @@ impl Agent {
             count += 1;
         }
         let turns = self.state.oldest_evictable_visible_turns(count)?;
+        // 观测(08-25 膨胀取证:群会话 68 万 token 未被裁剪,归档 07:42 后
+        // 静默停摆):水位越线的每次裁剪把门内数字全部留痕,零归档时告警。
+        tracing::info!(
+            total,
+            trigger,
+            target,
+            planned = count,
+            evictable = turns.len(),
+            "context trim engaged"
+        );
+        if count > 0 && turns.is_empty() {
+            tracing::warn!(
+                planned = count,
+                "context trim planned evictions but found no evictable turns"
+            );
+        }
         archive_and_delete_visible_turns_checked(
             &self.state,
             &self.memory,
