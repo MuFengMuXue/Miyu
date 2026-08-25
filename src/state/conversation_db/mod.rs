@@ -156,8 +156,7 @@ impl ConversationDb {
                 // 一起填(transfer/export.rs 同范式)。
                 let bak = state_dir.join("conversation.db.bak");
                 let _ = std::fs::remove_file(&bak);
-                if let Err(error) =
-                    conn.execute("VACUUM INTO ?1", [bak.to_string_lossy().as_ref()])
+                if let Err(error) = conn.execute("VACUUM INTO ?1", [bak.to_string_lossy().as_ref()])
                 {
                     tracing::error!(%error, "conversation.db 迁移前备份失败(继续迁移)");
                 }

@@ -21,7 +21,10 @@ pub type TodoList = Arc<Mutex<Vec<Todo>>>;
 // 会话加载/回存,纯函数 todo_write/todo_update 与其测试原样保留。
 
 fn todos_path(paths: &MiyuPaths, session: &str) -> PathBuf {
-    paths.state_dir.join("todos").join(format!("{session}.json"))
+    paths
+        .state_dir
+        .join("todos")
+        .join(format!("{session}.json"))
 }
 
 /// 某个会话当前的待办清单。
@@ -452,7 +455,10 @@ mod tests {
             Arc::clone(&todos),
         )
         .unwrap();
-        assert!(result.starts_with("todo list updated: 2 item(s)"), "{result}");
+        assert!(
+            result.starts_with("todo list updated: 2 item(s)"),
+            "{result}"
+        );
         let list = todos.lock().unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].content, "task A");

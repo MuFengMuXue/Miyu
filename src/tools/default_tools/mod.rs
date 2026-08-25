@@ -116,8 +116,7 @@ fn read_dispatch(
         let resolved = crate::tools::artifact::managed_file_path(&root, &session, name)?;
         args["path"] = Value::String(resolved.to_string_lossy().to_string());
     } else if let Some(rel) = path_arg.strip_prefix("kb:") {
-        let kb =
-            crate::tools::knowledge_base::KnowledgeBase::new(config.clone(), paths.clone())?;
+        let kb = crate::tools::knowledge_base::KnowledgeBase::new(config.clone(), paths.clone())?;
         let resolved = kb.safe_file_path(rel.trim())?;
         args["path"] = Value::String(resolved.to_string_lossy().to_string());
     }
@@ -144,8 +143,7 @@ fn clip_output_with_meta(value: &str) -> ClippedOutput {
     ClippedOutput {
         text: format!(
             "...[{} {omitted} {}]\n{tail}",
-            "omitted",
-            "chars, showing tail"
+            "omitted", "chars, showing tail"
         ),
         truncated: true,
         omitted_chars: omitted,
@@ -162,8 +160,7 @@ fn command_output_limited(output: std::process::Output, max_lines: usize) -> Res
     if stdout_raw.lines().nth(max_lines).is_some() {
         stdout.push_str(&format!(
             "\n[{} {max_lines} {}]",
-            "truncated to the first",
-            "results"
+            "truncated to the first", "results"
         ));
     }
     Ok(command_text(
@@ -374,18 +371,14 @@ mod tests {
 
     fn fake_trash(args: Value) -> Result<String> {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        trash_paths_with(
-            args,
-            &ToolProgress::new(tx),
-            |path| {
-                if std::fs::symlink_metadata(path)?.file_type().is_dir() {
-                    std::fs::remove_dir_all(path)?;
-                } else {
-                    std::fs::remove_file(path)?;
-                }
-                Ok(())
-            },
-        )
+        trash_paths_with(args, &ToolProgress::new(tx), |path| {
+            if std::fs::symlink_metadata(path)?.file_type().is_dir() {
+                std::fs::remove_dir_all(path)?;
+            } else {
+                std::fs::remove_file(path)?;
+            }
+            Ok(())
+        })
     }
 
     #[tokio::test]
@@ -615,10 +608,7 @@ mod tests {
         assert!(!last.exists(), "失败项之后的路径仍要处理");
         let failures = data["failures"].as_array().unwrap();
         assert_eq!(failures.len(), 1);
-        assert!(failures[0]["path"]
-            .as_str()
-            .unwrap()
-            .contains("nope.txt"));
+        assert!(failures[0]["path"].as_str().unwrap().contains("nope.txt"));
         assert!(!failures[0]["error"].as_str().unwrap().is_empty());
     }
 

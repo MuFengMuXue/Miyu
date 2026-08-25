@@ -463,7 +463,12 @@ impl StreamRenderer {
     /// header carries [`wait_spinner::BLOCK_MARKER`] so the spinner animates
     /// it, and a settled tool freezes into its final `✓` stats in place. The
     /// committed variant (`live == false`) prefers `final_progress` with `✓`.
-    pub(crate) fn tool_block_lines(&self, name: &str, stats: &ToolStats, live: bool) -> Vec<String> {
+    pub(crate) fn tool_block_lines(
+        &self,
+        name: &str,
+        stats: &ToolStats,
+        live: bool,
+    ) -> Vec<String> {
         let display = self.display_tool_name(name);
         let mut header = tool_status_text(&display, stats, is_subagent_tool(name));
         if inline_tool_subject(name) {

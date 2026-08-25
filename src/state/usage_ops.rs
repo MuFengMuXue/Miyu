@@ -87,7 +87,9 @@ impl StateStore {
                 let price = crate::models_cache::pricing_resolver(config);
                 usage::usage_details(&self.usage_history_file(), limit, src, model, &price)
             }
-            None => usage::usage_details(&self.usage_history_file(), limit, src, model, &|_, _| None),
+            None => {
+                usage::usage_details(&self.usage_history_file(), limit, src, model, &|_, _| None)
+            }
         }
     }
 

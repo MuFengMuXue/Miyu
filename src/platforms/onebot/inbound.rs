@@ -246,7 +246,10 @@ pub(in crate::platforms::onebot) fn push_image_ref_with_limits(
     true
 }
 
-pub(in crate::platforms::onebot) fn push_inbound_base64(parsed: &mut InboundMessage, encoded: &str) -> bool {
+pub(in crate::platforms::onebot) fn push_inbound_base64(
+    parsed: &mut InboundMessage,
+    encoded: &str,
+) -> bool {
     // Refuse before decoding once the shared count budget is full.
     if parsed.images.len() >= MAX_INBOUND_IMAGES {
         return false;
@@ -284,7 +287,10 @@ pub(in crate::platforms::onebot) fn push_inbound_base64(parsed: &mut InboundMess
     )
 }
 
-pub(in crate::platforms::onebot) fn http_image_source<'a>(file: &'a str, url: Option<&'a str>) -> Option<&'a str> {
+pub(in crate::platforms::onebot) fn http_image_source<'a>(
+    file: &'a str,
+    url: Option<&'a str>,
+) -> Option<&'a str> {
     url.filter(|url| {
         (url.starts_with("http://") || url.starts_with("https://")) && url.len() <= 4096
     })
@@ -295,7 +301,11 @@ pub(in crate::platforms::onebot) fn http_image_source<'a>(file: &'a str, url: Op
     })
 }
 
-pub(in crate::platforms::onebot) fn push_inbound_image_source(parsed: &mut InboundMessage, file: &str, url: Option<&str>) -> bool {
+pub(in crate::platforms::onebot) fn push_inbound_image_source(
+    parsed: &mut InboundMessage,
+    file: &str,
+    url: Option<&str>,
+) -> bool {
     if let Some(encoded) = file.strip_prefix("base64://") {
         return push_inbound_base64(parsed, encoded);
     }
@@ -332,7 +342,11 @@ pub(in crate::platforms::onebot) fn push_unresolved_image_file(
     unresolved.push(file.to_string());
 }
 
-pub(in crate::platforms::onebot) fn append_cq_image_sources(parsed: &mut InboundMessage, raw: &str, unresolved: &mut Vec<String>) {
+pub(in crate::platforms::onebot) fn append_cq_image_sources(
+    parsed: &mut InboundMessage,
+    raw: &str,
+    unresolved: &mut Vec<String>,
+) {
     let mut remaining = raw;
     for _ in 0..MAX_INBOUND_SEGMENTS {
         let Some(start) = remaining.find("[CQ:") else {
@@ -411,7 +425,10 @@ pub(in crate::platforms::onebot) fn append_message_image_sources(
     unresolved
 }
 
-pub(in crate::platforms::onebot) fn ordered_image_source(file: &str, url: Option<&str>) -> Option<OrderedMessageImageSource> {
+pub(in crate::platforms::onebot) fn ordered_image_source(
+    file: &str,
+    url: Option<&str>,
+) -> Option<OrderedMessageImageSource> {
     if let Some(encoded) = file.strip_prefix("base64://") {
         let maximum_encoded = MAX_INBOUND_IMAGE_BYTES
             .saturating_add(2)
@@ -763,7 +780,10 @@ pub(in crate::platforms::onebot) fn onebot_id_value(value: &str) -> Value {
         .unwrap_or_else(|_| Value::String(value.trim().to_string()))
 }
 
-pub(in crate::platforms::onebot) fn parse_message_info(data: &Value, self_id: i64) -> Option<PlatformMessageInfo> {
+pub(in crate::platforms::onebot) fn parse_message_info(
+    data: &Value,
+    self_id: i64,
+) -> Option<PlatformMessageInfo> {
     let message_id = data.get("message_id").and_then(value_id_string)?;
     let parsed = parse_message(data.get("message"), data.get("raw_message"), self_id);
     let sender = data.get("sender");
@@ -818,7 +838,10 @@ pub(in crate::platforms::onebot) fn parse_message_info(data: &Value, self_id: i6
     })
 }
 
-pub(in crate::platforms::onebot) fn parse_group_member(data: &Value, fallback_group_id: i64) -> Option<PlatformGroupMember> {
+pub(in crate::platforms::onebot) fn parse_group_member(
+    data: &Value,
+    fallback_group_id: i64,
+) -> Option<PlatformGroupMember> {
     Some(PlatformGroupMember {
         group_id: data
             .get("group_id")

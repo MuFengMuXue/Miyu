@@ -179,7 +179,11 @@ pub(crate) async fn add_meme(args: Value, config: &AppConfig, paths: &MiyuPaths)
     .to_string())
 }
 
-pub(crate) async fn update_meme(args: Value, config: &AppConfig, paths: &MiyuPaths) -> Result<String> {
+pub(crate) async fn update_meme(
+    args: Value,
+    config: &AppConfig,
+    paths: &MiyuPaths,
+) -> Result<String> {
     let library = selected_library(&args, config);
     let library_lock = library_lock(&library);
     let _guard = library_lock.lock().await;
@@ -236,7 +240,11 @@ pub(crate) async fn update_meme(args: Value, config: &AppConfig, paths: &MiyuPat
     Ok(json!({ "success": true, "library": library, "id": id, "metadata": item }).to_string())
 }
 
-pub(crate) async fn delete_meme(args: Value, config: &AppConfig, paths: &MiyuPaths) -> Result<String> {
+pub(crate) async fn delete_meme(
+    args: Value,
+    config: &AppConfig,
+    paths: &MiyuPaths,
+) -> Result<String> {
     let library = selected_library(&args, config);
     let library_lock = library_lock(&library);
     let _guard = library_lock.lock().await;

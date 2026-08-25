@@ -370,10 +370,7 @@ pub(super) fn register_group_member_tool(
 
 /// 私聊等非群会话也要有 get_avatar(08-22 用户实测:私聊里模型答"没有这个
 /// 工具")。群成员搜索仍是群聊专属,头像不是。
-pub(super) fn register_avatar_tool(
-    registry: &mut ToolRegistry,
-    context: Arc<PlatformTurnContext>,
-) {
+pub(super) fn register_avatar_tool(registry: &mut ToolRegistry, context: Arc<PlatformTurnContext>) {
     tools::register_avatar(registry, context);
 }
 

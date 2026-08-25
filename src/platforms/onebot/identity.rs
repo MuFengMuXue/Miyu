@@ -13,12 +13,17 @@ use crate::platforms::onebot::*;
 /// process-global and keyed by conversation, so tests that reuse one account id
 /// leak digests into each other and fail depending on scheduling order.
 #[cfg(test)]
-pub(in crate::platforms::onebot) fn unique_test_conversation(target: Target) -> PlatformConversation {
+pub(in crate::platforms::onebot) fn unique_test_conversation(
+    target: Target,
+) -> PlatformConversation {
     static NEXT_ACCOUNT: AtomicI64 = AtomicI64::new(10_000);
     platform_conversation(target, NEXT_ACCOUNT.fetch_add(1, AtomicOrdering::Relaxed))
 }
 
-pub(in crate::platforms::onebot) fn platform_conversation(target: Target, self_id: i64) -> PlatformConversation {
+pub(in crate::platforms::onebot) fn platform_conversation(
+    target: Target,
+    self_id: i64,
+) -> PlatformConversation {
     PlatformConversation {
         platform: "onebot".to_string(),
         account_id: self_id.to_string(),

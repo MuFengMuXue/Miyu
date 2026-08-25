@@ -32,7 +32,10 @@ pub(in crate::platforms::plugins::group_management) async fn validate_target(
     Ok(member)
 }
 
-pub(in crate::platforms::plugins::group_management) fn resolve_targets(args: &Value, context: &PlatformTurnContext) -> Result<Vec<String>> {
+pub(in crate::platforms::plugins::group_management) fn resolve_targets(
+    args: &Value,
+    context: &PlatformTurnContext,
+) -> Result<Vec<String>> {
     let mut values = Vec::new();
     // 经 string_list 收，容忍模型把数组写成「数组的 JSON 字符串」。踢人是
     // 有后果的操作，静默取不到目标比报错更糟。
@@ -124,7 +127,10 @@ pub(in crate::platforms::plugins::group_management) fn notice_member(
     }
 }
 
-pub(in crate::platforms::plugins::group_management) fn bounded_reason(args: &Value, settings: &Settings) -> Result<String> {
+pub(in crate::platforms::plugins::group_management) fn bounded_reason(
+    args: &Value,
+    settings: &Settings,
+) -> Result<String> {
     let reason = args
         .get("reason")
         .and_then(Value::as_str)
@@ -206,13 +212,19 @@ pub(in crate::platforms::plugins::group_management) fn failure(error: anyhow::Er
     })
 }
 
-pub(in crate::platforms::plugins::group_management) fn failure_for_target(error: anyhow::Error, user_id: &str) -> Value {
+pub(in crate::platforms::plugins::group_management) fn failure_for_target(
+    error: anyhow::Error,
+    user_id: &str,
+) -> Value {
     let mut result = failure(error);
     result["user_id"] = json!(user_id);
     result
 }
 
-pub(in crate::platforms::plugins::group_management) fn external_operation_result(data: Value, audit_errors: Vec<String>) -> Value {
+pub(in crate::platforms::plugins::group_management) fn external_operation_result(
+    data: Value,
+    audit_errors: Vec<String>,
+) -> Value {
     let audit_succeeded = audit_errors.is_empty();
     json!({
         "success": true,
@@ -235,7 +247,9 @@ pub(in crate::platforms::plugins::group_management) fn external_operation_result
 /// cannot tell a hopeless failure from a transient one and hammers the same
 /// target again — which is exactly what a batch kick against departed members
 /// used to do.
-pub(in crate::platforms::plugins::group_management) fn aggregate_target_results(results: Vec<Value>) -> Value {
+pub(in crate::platforms::plugins::group_management) fn aggregate_target_results(
+    results: Vec<Value>,
+) -> Value {
     let mut successful_target_ids = Vec::new();
     let mut failed_target_ids = Vec::new();
     let mut audit_failed_count = 0usize;
@@ -286,6 +300,10 @@ pub(in crate::platforms::plugins::group_management) fn aggregate_target_results(
     })
 }
 
-pub(in crate::platforms::plugins::group_management) fn json_result(success: bool, message: &str, data: Value) -> Result<String> {
+pub(in crate::platforms::plugins::group_management) fn json_result(
+    success: bool,
+    message: &str,
+    data: Value,
+) -> Result<String> {
     Ok(json!({ "success": success, "message": message, "data": data }).to_string())
 }

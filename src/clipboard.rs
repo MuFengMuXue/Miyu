@@ -88,7 +88,11 @@ fn read_clipboard_image_of(mime: &str) -> Result<Option<ClipboardImage>> {
     if let Some(img) = try_command("wl-paste", &["-t", mime], mime)? {
         return Ok(Some(img));
     }
-    if let Some(img) = try_command("xclip", &["-selection", "clipboard", "-t", mime, "-o"], mime)? {
+    if let Some(img) = try_command(
+        "xclip",
+        &["-selection", "clipboard", "-t", mime, "-o"],
+        mime,
+    )? {
         return Ok(Some(img));
     }
     Ok(None)

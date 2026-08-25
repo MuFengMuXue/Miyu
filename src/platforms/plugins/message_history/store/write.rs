@@ -262,7 +262,10 @@ pub(crate) fn read_boundary(
     .map_err(Into::into)
 }
 
-pub(crate) fn delete_history(conn: &mut Connection, request: DeleteRequest) -> Result<DeleteReport> {
+pub(crate) fn delete_history(
+    conn: &mut Connection,
+    request: DeleteRequest,
+) -> Result<DeleteReport> {
     let cutoff = match request.mode {
         DeleteMode::All => None,
         DeleteMode::KeepDays(days) => Some(

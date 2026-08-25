@@ -47,7 +47,11 @@ pub(in crate::cli) fn repl_visible_input_lines(
     vec![lines[0].clone(), omitted, lines[lines.len() - 1].clone()]
 }
 
-pub(in crate::cli) fn ensure_repl_space(stdout: &mut io::Stdout, input_row: &mut u16, needed_rows: u16) -> Result<()> {
+pub(in crate::cli) fn ensure_repl_space(
+    stdout: &mut io::Stdout,
+    input_row: &mut u16,
+    needed_rows: u16,
+) -> Result<()> {
     let (_, term_rows) = terminal::size().unwrap_or((80, 24));
     let term_rows = term_rows.max(1);
     if (*input_row).saturating_add(needed_rows) < term_rows {
@@ -64,7 +68,11 @@ pub(in crate::cli) fn ensure_repl_space(stdout: &mut io::Stdout, input_row: &mut
     Ok(())
 }
 
-pub(in crate::cli) fn submitted_echo_lines(mode: AgentMode, input: &str, cols: usize) -> Vec<String> {
+pub(in crate::cli) fn submitted_echo_lines(
+    mode: AgentMode,
+    input: &str,
+    cols: usize,
+) -> Vec<String> {
     let max_text_width = cols.saturating_sub(3).max(1);
     let bar = submitted_echo_bar(mode);
     let mut output = Vec::new();
@@ -107,7 +115,11 @@ pub(in crate::cli) fn repl_shortcut_hint_line(mode: AgentMode, cols: usize) -> S
     )
 }
 
-pub(in crate::cli) fn repl_wrapped_input_rows_for_cols(prefix: &str, lines: &[String], cols: usize) -> Vec<String> {
+pub(in crate::cli) fn repl_wrapped_input_rows_for_cols(
+    prefix: &str,
+    lines: &[String],
+    cols: usize,
+) -> Vec<String> {
     let max_width = repl_content_width_for_cols(prefix, cols);
     let mut rows = Vec::new();
     for line in lines {
@@ -162,7 +174,12 @@ pub(in crate::cli) fn repl_cursor_position_for_line_for_cols(
     )
 }
 
-pub(in crate::cli) fn repl_move_cursor_vertical(prefix: &str, input: &str, cursor: usize, direction: i32) -> usize {
+pub(in crate::cli) fn repl_move_cursor_vertical(
+    prefix: &str,
+    input: &str,
+    cursor: usize,
+    direction: i32,
+) -> usize {
     if input.is_empty() || direction == 0 {
         return cursor.min(input.chars().count());
     }
@@ -253,7 +270,11 @@ pub(in crate::cli) fn repl_content_width_for_cols(prefix: &str, cols: usize) -> 
         .max(1)
 }
 
-pub(in crate::cli) fn repl_prompt_rows_for_cols(prefix: &str, lines: &[String], cols: usize) -> u16 {
+pub(in crate::cli) fn repl_prompt_rows_for_cols(
+    prefix: &str,
+    lines: &[String],
+    cols: usize,
+) -> u16 {
     let cols = cols.max(1);
     let mut rows = 0usize;
     for line in lines {

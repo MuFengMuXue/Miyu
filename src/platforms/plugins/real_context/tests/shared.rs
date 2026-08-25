@@ -1,11 +1,13 @@
 //! 真实感插件测试共用的 fixture。
 
-use crate::platforms::plugins::real_context::*;
 use crate::paths::MiyuPaths;
+use crate::platforms::plugins::real_context::*;
 use crate::platforms::PlatformAdapter;
 use crate::state::StateStore;
 
-pub(super) fn test_context(adapter: Arc<dyn PlatformAdapter>) -> (tempfile::TempDir, PlatformTurnContext) {
+pub(super) fn test_context(
+    adapter: Arc<dyn PlatformAdapter>,
+) -> (tempfile::TempDir, PlatformTurnContext) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let paths = MiyuPaths {

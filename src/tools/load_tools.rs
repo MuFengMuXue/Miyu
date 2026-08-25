@@ -347,7 +347,10 @@ mod tests {
         assert!(!lazy.function.description.contains("第二行细节"));
         // 裸 {"type":"object"}:JSON Schema 里等价于显式写 properties:{} +
         // additionalProperties:true,少 48 字符/条。
-        assert_eq!(lazy.function.parameters, serde_json::json!({"type":"object"}));
+        assert_eq!(
+            lazy.function.parameters,
+            serde_json::json!({"type":"object"})
+        );
         let always = definitions
             .iter()
             .find(|def| def.function.name == "always_tool")

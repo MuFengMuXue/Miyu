@@ -221,15 +221,27 @@ async fn run_vision_batch(
         .zip(results)
         .enumerate()
         .map(|(index, (target, result))| match result {
-            Ok(analysis) => format!("[Image {}] {}
-{}", index + 1, target, analysis.trim()),
-            Err(error) => format!("[Image {}] {}
-ERROR: {:#}", index + 1, target, error),
+            Ok(analysis) => format!(
+                "[Image {}] {}
+{}",
+                index + 1,
+                target,
+                analysis.trim()
+            ),
+            Err(error) => format!(
+                "[Image {}] {}
+ERROR: {:#}",
+                index + 1,
+                target,
+                error
+            ),
         })
         .collect::<Vec<_>>();
-    Ok(sections.join("
+    Ok(sections.join(
+        "
 
-"))
+",
+    ))
 }
 
 #[cfg(test)]
@@ -250,7 +262,11 @@ mod batch_tests {
     /// 批量输出保序分节;单张失败记 ERROR 不掀整批;prompt 透传给每张。
     #[tokio::test]
     async fn vision_batch_keeps_order_and_isolates_failures() {
-        let targets = vec!["one.png".to_string(), "two.png".to_string(), "three.png".to_string()];
+        let targets = vec![
+            "one.png".to_string(),
+            "two.png".to_string(),
+            "three.png".to_string(),
+        ];
         let output = run_vision_batch(
             targets,
             Some(Value::String("what is it".to_string())),
@@ -327,7 +343,11 @@ async fn analyze_image_one(args: Value, config: AppConfig, paths: MiyuPaths) -> 
 
 /// 按扩展名识别视频并给出 mime;None=按图片处理。
 fn video_mime(value: &str) -> Option<&'static str> {
-    let lower = value.split('?').next().unwrap_or(value).to_ascii_lowercase();
+    let lower = value
+        .split('?')
+        .next()
+        .unwrap_or(value)
+        .to_ascii_lowercase();
     let ext = lower.rsplit('.').next()?;
     Some(match ext {
         "mp4" | "m4v" => "video/mp4",
@@ -380,7 +400,9 @@ pub async fn analyze_video_url_with_prompt(
     let endpoint_count = client.endpoint_count();
     let request = client.chat_stream(
         vec![
-            ChatMessage::system("Answer based on the video content; do not make up details you cannot see."),
+            ChatMessage::system(
+                "Answer based on the video content; do not make up details you cannot see.",
+            ),
             ChatMessage::user_with_video(prompt, video_url.to_string()),
         ],
         Vec::new(),
@@ -535,7 +557,9 @@ pub async fn analyze_image_url_with_prompt(
     let endpoint_count = client.endpoint_count();
     let request = client.chat_stream(
         vec![
-            ChatMessage::system("Answer based on the image content; do not make up details you cannot see."),
+            ChatMessage::system(
+                "Answer based on the image content; do not make up details you cannot see.",
+            ),
             ChatMessage::user_with_image(prompt, image_url.to_string()),
         ],
         Vec::new(),
@@ -700,7 +724,10 @@ mod video_route_tests {
     fn video_mime_detection_covers_url_and_case() {
         assert_eq!(video_mime("/tmp/a.mp4"), Some("video/mp4"));
         assert_eq!(video_mime("/tmp/A.MOV"), Some("video/mov"));
-        assert_eq!(video_mime("https://x.com/v.webm?sig=abc"), Some("video/webm"));
+        assert_eq!(
+            video_mime("https://x.com/v.webm?sig=abc"),
+            Some("video/webm")
+        );
         assert_eq!(video_mime("/tmp/a.png"), None);
         assert_eq!(video_mime("https://x.com/v"), None);
     }
@@ -708,7 +735,8 @@ mod video_route_tests {
     /// wire 形态锁定:OpenRouter/Qwen 系约定 {"type":"video_url","video_url":{"url":…}}。
     #[test]
     fn video_part_serializes_to_openrouter_shape() {
-        let message = crate::llm::ChatMessage::user_with_video("看看这段", "data:video/mp4;base64,AAAA");
+        let message =
+            crate::llm::ChatMessage::user_with_video("看看这段", "data:video/mp4;base64,AAAA");
         let json = serde_json::to_value(&message).unwrap();
         let parts = json["content"].as_array().unwrap();
         assert_eq!(parts[1]["type"], "video_url");
@@ -808,10 +836,10 @@ mod tests {
     fn vision_uses_the_active_text_pool_when_it_can_see() {
         let mut config = AppConfig::default();
         let provider = config
-        .providers
-        .iter_mut()
-        .find(|provider| !provider.is_claude_code())
-        .unwrap();
+            .providers
+            .iter_mut()
+            .find(|provider| !provider.is_claude_code())
+            .unwrap();
         let provider_id = provider.id.clone();
         provider.model_modalities.insert(
             provider.default_model.clone(),

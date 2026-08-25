@@ -1,8 +1,8 @@
 //! 回复整形、分段与投递抑制。
 
+use super::shared::*;
 use crate::platforms::*;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
-use super::shared::*;
 
 /// Regression: an auto-attached reply image delivered in one turn must
 /// stay suppressed for the recovery turn that follows an interrupted
@@ -492,8 +492,7 @@ fn failed_older_send_merges_mentions_into_a_newer_response_target() {
 async fn adaptive_response_target_is_identical_on_primary_and_fallback() {
     let (_temp, mut context, adapter) = test_turn_context(true);
     let registry = MessageActivityRegistry::default();
-    let (activity, start, _) =
-        registry.observe("onebot:1:group:2", "m1", "alice", Instant::now());
+    let (activity, start, _) = registry.observe("onebot:1:group:2", "m1", "alice", Instant::now());
     for index in 0..5 {
         registry.observe(
             "onebot:1:group:2",

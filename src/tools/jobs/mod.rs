@@ -223,9 +223,7 @@ pub fn overview() -> Vec<JobOverview> {
 /// 文件留在磁盘,唤醒消息里带着 log_path,要翻旧账用 read_file。
 pub fn acknowledge(job_id: &str) {
     let mut jobs = jobs().lock().unwrap();
-    let terminal = jobs
-        .get(job_id)
-        .is_some_and(|job| job.state.is_terminal());
+    let terminal = jobs.get(job_id).is_some_and(|job| job.state.is_terminal());
     if terminal {
         jobs.remove(job_id);
     }
@@ -340,7 +338,9 @@ pub async fn spawn_background(
         .stdout(std::process::Stdio::from(log.try_clone()?))
         .stderr(std::process::Stdio::from(log));
     process.process_group(0);
-    let mut child = process.spawn().context("failed to spawn the background job")?;
+    let mut child = process
+        .spawn()
+        .context("failed to spawn the background job")?;
     let pid = child.id().context("background job has no pid")?;
     let entry = JobEntry {
         job_id: job_id.clone(),
@@ -659,8 +659,8 @@ async fn job_stop(args: Value) -> Result<String> {
         }))?);
     }
     let job_id = &ids[0];
-    let job = job_snapshot(job_id)
-        .with_context(|| format!("background job {job_id} does not exist"))?;
+    let job =
+        job_snapshot(job_id).with_context(|| format!("background job {job_id} does not exist"))?;
     if job.state.is_terminal() {
         return Ok(serde_json::to_string_pretty(&json!({
             "ok": true,
@@ -679,8 +679,8 @@ async fn job_stop(args: Value) -> Result<String> {
 
 /// Stop a single job; returns its resulting status label.
 async fn stop_one(job_id: &str) -> Result<String> {
-    let job = job_snapshot(job_id)
-        .with_context(|| format!("background job {job_id} does not exist"))?;
+    let job =
+        job_snapshot(job_id).with_context(|| format!("background job {job_id} does not exist"))?;
     if job.state.is_terminal() {
         return Ok(job.state.label());
     }

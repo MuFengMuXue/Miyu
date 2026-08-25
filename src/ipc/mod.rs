@@ -276,7 +276,7 @@ mod tests {
             &DaemonLaunchConfig {
                 port: 8300,
                 password_file: Some(old_password.clone()),
-            bind: None,
+                bind: None,
             },
         )
         .unwrap();

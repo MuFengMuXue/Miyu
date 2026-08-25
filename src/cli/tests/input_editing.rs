@@ -1,9 +1,9 @@
 //! 输入编辑：光标、换行、粘贴、历史。
 
 // 被测的东西散在 cli::mod 与 repl 的兄弟模块里，这里全都要够到。
+use super::shared::*;
 use crate::cli::repl::editor::*;
 use crate::cli::*;
-use super::shared::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

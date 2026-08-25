@@ -130,11 +130,9 @@ pub(crate) fn command_text(config: &PlatformsConfig, command: &str) -> String {
     format!("{}{}", config.command_prefix, command)
 }
 
-
 pub(crate) fn reset_usage_message(config: &PlatformsConfig) -> String {
     usage_message(config, RESET_COMMAND_ID)
 }
-
 
 pub(crate) fn wipe_confirm_message(config: &PlatformsConfig) -> String {
     let wipe = command_text(config, WIPE_COMMAND_ID);

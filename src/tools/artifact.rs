@@ -182,7 +182,11 @@ fn required_filename(args: &Value) -> Result<&str> {
     Ok(filename)
 }
 
-pub(in crate::tools) fn managed_file_path(root: &Path, session_id: &str, filename: &str) -> Result<PathBuf> {
+pub(in crate::tools) fn managed_file_path(
+    root: &Path,
+    session_id: &str,
+    filename: &str,
+) -> Result<PathBuf> {
     validate_session_id(session_id)?;
     let session_dir = root.join(session_id);
     let session_canonical = session_dir.canonicalize().with_context(|| {

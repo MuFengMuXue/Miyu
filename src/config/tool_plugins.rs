@@ -714,7 +714,10 @@ impl Default for DiagnosticsPluginConfig {
     }
 }
 
-pub(crate) fn validate_api_quota_accounts(provider: &str, config: &ApiQuotaProviderConfig) -> Result<()> {
+pub(crate) fn validate_api_quota_accounts(
+    provider: &str,
+    config: &ApiQuotaProviderConfig,
+) -> Result<()> {
     if !config.api_key.trim().is_empty() && !config.accounts.is_empty() {
         bail!("plugins.api_quota.{provider} legacy api_key could not be migrated");
     }

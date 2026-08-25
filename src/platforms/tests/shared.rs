@@ -1,7 +1,7 @@
 //! 平台层测试共用的 fixture。
 
-use crate::platforms::*;
 use crate::paths::MiyuPaths;
+use crate::platforms::*;
 use futures_util::future::BoxFuture;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};

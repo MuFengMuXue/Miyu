@@ -270,7 +270,11 @@ impl StreamRenderer {
         }
     }
 
-    pub(crate) fn ensure_waiting_phase(&mut self, phase: String, style: SpinnerStyle) -> Result<()> {
+    pub(crate) fn ensure_waiting_phase(
+        &mut self,
+        phase: String,
+        style: SpinnerStyle,
+    ) -> Result<()> {
         if self.command_display.is_some() {
             return Ok(());
         }

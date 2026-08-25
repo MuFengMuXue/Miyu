@@ -128,9 +128,7 @@ impl OpenAiCompatibleClient {
             stream::run_claude_turn(&runtime, &workdir, &args, &payload, request_id, on_chunk).await
         };
         let outcome = match outcome {
-            Err(error)
-                if resumable.is_some() && stream::resume_session_lost(&error) =>
-            {
+            Err(error) if resumable.is_some() && stream::resume_session_lost(&error) => {
                 // claude 侧会话被清理(过期/手动删除):忘掉映射,整段全量重放
                 // 一次。只对「会话找不到」类错误自愈,限流/登录错误照常上抛。
                 tracing::warn!(
@@ -142,9 +140,9 @@ impl OpenAiCompatibleClient {
                     session::forget_session(session_id);
                 }
                 let payload = payload::render_user_payload(&conversation);
-                let args =
-                    self.claude_code_args(&runtime, &model, &system_prompt, None, ephemeral);
-                stream::run_claude_turn(&runtime, &workdir, &args, &payload, request_id, on_chunk).await?
+                let args = self.claude_code_args(&runtime, &model, &system_prompt, None, ephemeral);
+                stream::run_claude_turn(&runtime, &workdir, &args, &payload, request_id, on_chunk)
+                    .await?
             }
             other => other?,
         };
@@ -157,8 +155,7 @@ impl OpenAiCompatibleClient {
                 let content = outcome.result.content.clone();
                 if !content.trim().is_empty() {
                     let predicted = ChatMessage::assistant(content, None);
-                    let next_hash =
-                        session::extend_chain(chain[conversation.len()], &predicted);
+                    let next_hash = session::extend_chain(chain[conversation.len()], &predicted);
                     session::record_session(
                         &self.provider.id,
                         &model,
@@ -295,8 +292,7 @@ const BRIDGE_DUPLICATE_TOOLS: &[&str] = &[
 fn mcp_bridge_config(exclude_duplicates: bool) -> Option<String> {
     let session = crate::tools::workspace::try_session()?;
     let exe = crate::paths::miyu_executable().ok()?;
-    let origin =
-        serde_json::to_string(&crate::tools::workspace::current_turn_origin()).ok()?;
+    let origin = serde_json::to_string(&crate::tools::workspace::current_turn_origin()).ok()?;
     let mut env = serde_json::Map::new();
     env.insert("MIYU_SESSION".into(), json!(&*session));
     env.insert("MIYU_TURN_ORIGIN".into(), json!(origin));

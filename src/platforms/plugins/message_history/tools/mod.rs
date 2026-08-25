@@ -7,9 +7,9 @@ use super::store::{
     ActivityRankingQuery, ConversationKey, DeleteMode, DeleteRequest, GroupKey, HistoryMessage,
     HistoryScope, HistoryStore, MediaKind, RecentQuery, SearchQuery,
 };
-use crate::platforms::plugins::real_context::safe_prompt_field;
 use crate::config::QqMessageHistoryPluginSettings;
 use crate::platforms::access_control::{is_effective_admin, ONEBOT_PLATFORM};
+use crate::platforms::plugins::real_context::safe_prompt_field;
 use crate::platforms::{
     ConversationKind, PlatformGroupMember, PlatformInboundEventKind, PlatformTurnContext,
 };
@@ -19,7 +19,6 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 
 pub(super) fn register(
     registry: &mut ToolRegistry,
@@ -268,7 +267,11 @@ fn format_history_output(
             };
             let piece = match (media.media_id.as_deref(), media.label.as_deref()) {
                 (Some(id), Some(name)) => {
-                    format!("[{label} id={}, name={}]", safe_prompt_field(id), safe_prompt_field(name))
+                    format!(
+                        "[{label} id={}, name={}]",
+                        safe_prompt_field(id),
+                        safe_prompt_field(name)
+                    )
                 }
                 (Some(id), None) => format!("[{label} id={}]", safe_prompt_field(id)),
                 (None, Some(name)) => format!("[{label}: {}]", safe_prompt_field(name)),
@@ -301,7 +304,10 @@ fn format_history_output(
             safe_prompt_field(&message.message_id)
         ));
         if let Some(reply_to) = message.reply_to_message_id.as_deref() {
-            output.push_str(&format!("  reply-to: msg={}\n", safe_prompt_field(reply_to)));
+            output.push_str(&format!(
+                "  reply-to: msg={}\n",
+                safe_prompt_field(reply_to)
+            ));
         }
         if !message.content.mentioned_user_ids.is_empty() {
             let mentions = message
@@ -338,10 +344,7 @@ async fn search(
         settings.history_search_max_results,
         settings.history_safe_page_limit,
     );
-    let show_conversation = matches!(
-        scope,
-        HistoryScope::AllGroups(_) | HistoryScope::Account(_)
-    );
+    let show_conversation = matches!(scope, HistoryScope::AllGroups(_) | HistoryScope::Account(_));
     let mut query = SearchQuery::new(scope, query_text, limit);
     query.sender_id = optional_id(&arguments, "sender_id")?;
     apply_time_filter(&arguments, &mut query)?;
@@ -377,20 +380,14 @@ async fn user_history(
         settings.history_search_max_results,
         settings.history_safe_page_limit,
     );
-    let show_conversation = matches!(
-        scope,
-        HistoryScope::AllGroups(_) | HistoryScope::Account(_)
-    );
+    let show_conversation = matches!(scope, HistoryScope::AllGroups(_) | HistoryScope::Account(_));
     let mut query = SearchQuery::new(scope, "", page_limit);
     query.sender_id = Some(user_id.clone());
     apply_time_filter(&arguments, &mut query)?;
     let mut page = store.search(query).await?;
     page.messages.reverse();
     Ok(format_history_output(
-        format!(
-            "{} message(s) from QQ {user_id}",
-            page.messages.len()
-        ),
+        format!("{} message(s) from QQ {user_id}", page.messages.len()),
         &page.messages,
         page.next_cursor.is_some(),
         show_conversation,
@@ -417,10 +414,7 @@ async fn recent(
     let has_time_filter = optional_string(&arguments, "start_time")?.is_some()
         || optional_string(&arguments, "end_time")?.is_some()
         || positive_u32(&arguments, "days")?.is_some();
-    let show_conversation = matches!(
-        scope,
-        HistoryScope::AllGroups(_) | HistoryScope::Account(_)
-    );
+    let show_conversation = matches!(scope, HistoryScope::AllGroups(_) | HistoryScope::Account(_));
     let page = match scope {
         HistoryScope::Group(group) if !has_time_filter => {
             store
@@ -575,10 +569,9 @@ async fn download_avatar(arguments: Value, context: Arc<PlatformTurnContext>) ->
         (None, None) => bail!("pass exactly one of user_id or group_id"),
         (Some(user_id), None) => {
             if context.conversation.kind == ConversationKind::Group {
-                let member = context
-                    .group_member(&user_id)
-                    .await?
-                    .with_context(|| format!("群里没有 QQ 号为 {user_id} 的成员，只能下载当前群成员的头像"))?;
+                let member = context.group_member(&user_id).await?.with_context(|| {
+                    format!("群里没有 QQ 号为 {user_id} 的成员，只能下载当前群成员的头像")
+                })?;
                 let url = crate::platforms::avatar::user_avatar_url(
                     &member.user_id,
                     crate::platforms::avatar::DEFAULT_AVATAR_SIZE,
@@ -590,9 +583,7 @@ async fn download_avatar(arguments: Value, context: Arc<PlatformTurnContext>) ->
                 // 私聊(08-22 二次修):头像不该是群聊专属,但隐私面维持最小
                 // ——只允许取对话对方(或发送者自己)的头像;看群成员头像请
                 // 传 group_id 或去群里。
-                if user_id != context.conversation.conversation_id
-                    && user_id != context.sender_id
-                {
+                if user_id != context.conversation.conversation_id && user_id != context.sender_id {
                     bail!("在私聊里只能获取对话对方的头像;群成员头像请传 group_id 或在群聊中使用");
                 }
                 let url = crate::platforms::avatar::user_avatar_url(
@@ -613,7 +604,11 @@ async fn download_avatar(arguments: Value, context: Arc<PlatformTurnContext>) ->
                 crate::platforms::avatar::DEFAULT_AVATAR_SIZE,
             )
             .context("群号不是纯数字，无法构造群头像 URL")?;
-            (url, format!("群 {group_id} 的群头像"), format!("group-{group_id}"))
+            (
+                url,
+                format!("群 {group_id} 的群头像"),
+                format!("group-{group_id}"),
+            )
         }
     };
     let path = crate::platforms::avatar::download_avatar(&url, &dir, &file_stem).await?;
@@ -622,28 +617,6 @@ async fn download_avatar(arguments: Value, context: Arc<PlatformTurnContext>) ->
     // 非管理员豁免白名单(platforms/tool.rs)。
     Ok(format!("avatar downloaded: {} ({alt})", path.display()))
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {

@@ -182,7 +182,10 @@ pub(in crate::cli) fn placeholder_at_cursor(input: &str, cursor: usize) -> Optio
     None
 }
 
-pub(in crate::cli) fn placeholder_before_cursor(input: &str, cursor: usize) -> Option<(usize, usize)> {
+pub(in crate::cli) fn placeholder_before_cursor(
+    input: &str,
+    cursor: usize,
+) -> Option<(usize, usize)> {
     let placeholders = find_repl_placeholders(input);
     for (start, end) in &placeholders {
         if *end == cursor {
@@ -192,11 +195,17 @@ pub(in crate::cli) fn placeholder_before_cursor(input: &str, cursor: usize) -> O
     None
 }
 
-pub(in crate::cli) fn placeholder_before_or_at_cursor(input: &str, cursor: usize) -> Option<(usize, usize)> {
+pub(in crate::cli) fn placeholder_before_or_at_cursor(
+    input: &str,
+    cursor: usize,
+) -> Option<(usize, usize)> {
     placeholder_at_cursor(input, cursor).or_else(|| placeholder_before_cursor(input, cursor))
 }
 
-pub(in crate::cli) fn placeholder_after_cursor(input: &str, cursor: usize) -> Option<(usize, usize)> {
+pub(in crate::cli) fn placeholder_after_cursor(
+    input: &str,
+    cursor: usize,
+) -> Option<(usize, usize)> {
     let placeholders = find_repl_placeholders(input);
     for (start, end) in &placeholders {
         if *start == cursor {
@@ -206,7 +215,10 @@ pub(in crate::cli) fn placeholder_after_cursor(input: &str, cursor: usize) -> Op
     None
 }
 
-pub(in crate::cli) fn placeholder_after_or_at_cursor(input: &str, cursor: usize) -> Option<(usize, usize)> {
+pub(in crate::cli) fn placeholder_after_or_at_cursor(
+    input: &str,
+    cursor: usize,
+) -> Option<(usize, usize)> {
     placeholder_at_cursor(input, cursor).or_else(|| placeholder_after_cursor(input, cursor))
 }
 
@@ -216,7 +228,11 @@ pub(in crate::cli) fn remove_range_chars(value: &mut String, char_start: usize, 
     value.replace_range(byte_start..byte_end, "");
 }
 
-pub(in crate::cli) fn parse_image_placeholder_index(input: &str, char_start: usize, char_end: usize) -> Option<usize> {
+pub(in crate::cli) fn parse_image_placeholder_index(
+    input: &str,
+    char_start: usize,
+    char_end: usize,
+) -> Option<usize> {
     let chars: Vec<char> = input.chars().collect();
     let segment: String = chars[char_start..char_end].iter().collect();
     let after_prefix = segment.strip_prefix("[Image ")?;
@@ -306,7 +322,10 @@ pub(in crate::cli) fn remove_word_before_cursor(
     *cursor = start;
 }
 
-pub(in crate::cli) fn expand_pasted_text_placeholders(input: &str, pasted_texts: &[Option<PastedText>]) -> String {
+pub(in crate::cli) fn expand_pasted_text_placeholders(
+    input: &str,
+    pasted_texts: &[Option<PastedText>],
+) -> String {
     let placeholders = find_pasted_text_placeholders(input);
     if placeholders.is_empty() {
         return input.to_string();

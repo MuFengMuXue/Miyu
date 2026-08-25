@@ -182,11 +182,6 @@ fn register_load_skill(
     ));
 }
 
-
-
-
-
-
 fn load_skill(args: Value, config: &AppConfig, paths: &MiyuPaths) -> Result<String> {
     let name = required_string(&args, "name")?;
     let loaded = skills::load(&name, config, paths)?;
@@ -459,9 +454,7 @@ mod tests {
             .find(|definition| definition.function.name == "load_skill")
             .expect("load_skill 应当在 stub 目录里");
         assert!(
-            stub.function
-                .description
-                .contains("name=\"skill-creator\""),
+            stub.function.description.contains("name=\"skill-creator\""),
             "stub 里看不到技能名——模型只能猜"
         );
         assert_eq!(

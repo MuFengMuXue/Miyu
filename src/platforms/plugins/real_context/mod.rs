@@ -94,21 +94,6 @@ impl RealContextPlugin {
     fn store(&self, context: &PlatformTurnContext) -> HistoryStore {
         message_history::store_for_paths(&context.paths)
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
 
 impl PlatformPlugin for RealContextPlugin {

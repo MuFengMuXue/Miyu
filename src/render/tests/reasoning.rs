@@ -236,9 +236,7 @@ fn reasoning_phase_starts_as_neutral_waiting_without_content() {
     );
 
     renderer
-        .start_reasoning_phase(
-            std::time::Instant::now() - std::time::Duration::from_millis(1_200),
-        )
+        .start_reasoning_phase(std::time::Instant::now() - std::time::Duration::from_millis(1_200))
         .unwrap();
 
     assert!(renderer.reasoning_title.is_none());
@@ -299,7 +297,9 @@ fn batch_preparation_timer_spans_the_whole_window() {
     );
 
     // 工具真跑起来了 = 窗口结束，下一批重新计时。
-    renderer.write_tool_result("write_file", true, "ok").unwrap();
+    renderer
+        .write_tool_result("write_file", true, "ok")
+        .unwrap();
     renderer.write_tool_preparing("apply_patch", false).unwrap();
     assert_ne!(
         renderer.tool_preparing.expect("新一批的准备状态").1,

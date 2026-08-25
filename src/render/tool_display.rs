@@ -59,7 +59,11 @@ pub(crate) fn style_summary_text(text: &str, style: SummaryStyle) -> String {
     }
 }
 
-pub(crate) fn write_activity_summary(writer: &mut impl Write, text: &str, style: SummaryStyle) -> Result<()> {
+pub(crate) fn write_activity_summary(
+    writer: &mut impl Write,
+    text: &str,
+    style: SummaryStyle,
+) -> Result<()> {
     writeln!(writer, "{}", style_summary_text(text, style))?;
     writeln!(writer)?;
     Ok(())
@@ -226,11 +230,7 @@ pub(crate) fn tool_subject(name: &str, arguments: &str) -> Option<String> {
             match files.as_slice() {
                 [] => None,
                 [only] => Some(only.clone()),
-                [first, ..] => Some(format!(
-                    "{first} +{} {}",
-                    files.len() - 1,
-                    t("more", "项")
-                )),
+                [first, ..] => Some(format!("{first} +{} {}", files.len() - 1, t("more", "项"))),
             }
         }
         "write_file" | "edit_file" | "edit_string" | "manage_script" => {
@@ -301,9 +301,9 @@ pub(crate) fn tool_subject(name: &str, arguments: &str) -> Option<String> {
         }
         "scientific_calculator" => string_arg(&args, &["expression", "operation"]),
         "alarm" => string_arg(&args, &["label", "time", "id"]),
-        "archlinux_official_package_query"
-        | "review_aur_package"
-        | "install_aur_package" => string_arg(&args, &["package_name", "package"]),
+        "archlinux_official_package_query" | "review_aur_package" | "install_aur_package" => {
+            string_arg(&args, &["package_name", "package"])
+        }
         "vision_analyze" | "print_image" | "manage_meme" => {
             string_arg(&args, &["image"]).map(|image| image_basename(&image))
         }

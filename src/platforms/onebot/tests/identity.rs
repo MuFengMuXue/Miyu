@@ -1,7 +1,7 @@
 //! 群名、昵称、@ 与身份绑定。
 
-use crate::platforms::onebot::*;
 use super::shared::*;
+use crate::platforms::onebot::*;
 
 #[test]
 fn group_name_cache_is_ttl_bound_and_capacity_bound() {
@@ -340,8 +340,7 @@ async fn qq_conversation_persona_drives_context_and_session_binding() {
             },
             text_models_inheritance: crate::config::PlatformModelPoolInheritance::Platform,
             text_models: None,
-            multimodal_models_inheritance:
-                crate::config::PlatformModelPoolInheritance::Platform,
+            multimodal_models_inheritance: crate::config::PlatformModelPoolInheritance::Platform,
             multimodal_models: None,
             extra_prompt: String::new(),
             session_limits: None,

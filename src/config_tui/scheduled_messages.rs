@@ -167,14 +167,20 @@ fn task_fields(task: Option<&serde_json::Value>) -> Vec<Field> {
             .choices(&[t("Group chat", "群聊"), t("Private chat", "私聊")]),
         Field::new(t("Group number / QQ number", "群号 / QQ 号"), target_id),
         Field::new(
-            t("Times (HH:MM, comma separated)", "时间点（HH:MM，逗号分隔）"),
+            t(
+                "Times (HH:MM, comma separated)",
+                "时间点（HH:MM，逗号分隔）",
+            ),
             list("times"),
         ),
         Field::new(t("Message text", "发送内容"), text("message")),
         // 回车弹多选菜单(08-23 用户点名:手填 mon..sun 太不方便);读取时
         // 顺手把存量长名归一成短名。
         Field::new(
-            t("Weekdays (Enter to pick, empty = every day)", "星期（回车多选，留空=每天）"),
+            t(
+                "Weekdays (Enter to pick, empty = every day)",
+                "星期（回车多选，留空=每天）",
+            ),
             field_list(&list("days"))
                 .iter()
                 .map(|day| normalize_day(day))
@@ -183,7 +189,10 @@ fn task_fields(task: Option<&serde_json::Value>) -> Vec<Field> {
         )
         .multi_choices(&["mon", "tue", "wed", "thu", "fri", "sat", "sun"]),
         Field::new(
-            t("Bot account (empty = first connected)", "机器人账号（留空=第一个已连接）"),
+            t(
+                "Bot account (empty = first connected)",
+                "机器人账号（留空=第一个已连接）",
+            ),
             account,
         ),
     ];

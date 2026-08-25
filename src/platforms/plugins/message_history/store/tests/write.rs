@@ -1,7 +1,7 @@
 //! 写入、删除与边界。
 
-use crate::platforms::plugins::message_history::store::*;
 use super::shared::*;
+use crate::platforms::plugins::message_history::store::*;
 
 #[tokio::test]
 async fn records_are_idempotent_isolated_and_sanitized() {

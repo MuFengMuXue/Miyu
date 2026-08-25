@@ -240,7 +240,12 @@ impl RateWindow {
         self.available_at(Instant::now(), conversation, limit)
     }
 
-    pub(crate) fn available_at(&mut self, now: Instant, conversation: &str, limit: PlatformRateLimit) -> bool {
+    pub(crate) fn available_at(
+        &mut self,
+        now: Instant,
+        conversation: &str,
+        limit: PlatformRateLimit,
+    ) -> bool {
         self.prune_at(now);
         if limit.max_messages == 0 {
             return true;

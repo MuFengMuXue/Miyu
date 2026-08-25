@@ -361,7 +361,9 @@ mod tests {
             let _ = sock.read(&mut buffer).await.unwrap();
             let mut encoder =
                 flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-            encoder.write_all("你好，这是明文正文。".as_bytes()).unwrap();
+            encoder
+                .write_all("你好，这是明文正文。".as_bytes())
+                .unwrap();
             let gz = encoder.finish().unwrap();
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

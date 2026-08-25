@@ -465,7 +465,10 @@ pub(crate) fn spawn_daemon_reaper(mut child: std::process::Child) {
     });
 }
 
-pub(crate) fn append_daemon_process_args(command: &mut std::process::Command, launch: &DaemonLaunchConfig) {
+pub(crate) fn append_daemon_process_args(
+    command: &mut std::process::Command,
+    launch: &DaemonLaunchConfig,
+) {
     command.arg("--port").arg(launch.port.to_string());
     if let Some(path) = &launch.password_file {
         command.arg("--password-file").arg(path);
