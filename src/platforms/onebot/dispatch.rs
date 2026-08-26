@@ -147,6 +147,29 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
         );
         return;
     }
+    // 合并转发要在建 inbound_event 之前展开:正文、图片、以及后面每一环
+    // (命令解析、主动回复判断、历史记账)读的都是这份 parsed,晚一步展开就
+    // 全都看不见转发内容。取不到内容不影响本条消息的其余部分。
+    if !parsed.forward_ids.is_empty() {
+        match crate::platforms::onebot::forward::expand_forwards(&conn, &mut parsed).await {
+            Ok(nodes) if nodes > 0 => tracing::info!(
+                target: "miyu::qq",
+                self_id,
+                sender_id = user_id,
+                conversation_id = target.conversation_id(),
+                nodes,
+                "{}",
+                t("OneBot expanded a forwarded message", "OneBot 已展开合并转发")
+            ),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(
+                target: "miyu::qq",
+                error = %error,
+                "{}",
+                t("OneBot forwarded message expansion failed", "OneBot 合并转发展开失败")
+            ),
+        }
+    }
     let parsed_command = commands::parse(&app_config.platforms, parsed.text.trim());
     let mut inbound_event = message_event_at(
         target,
@@ -171,12 +194,14 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
     let quoted_message_id = parsed_command
         .is_none()
         .then(|| {
-            parsed.reply_to_message_id.as_deref().filter(|id| {
-                event.get("message_id").and_then(value_id_string).as_deref() != Some(*id)
+            // 取所有权:下面要在同一段里可变借用 parsed(把被引用转发的图片
+            // 并进当前消息的图片位),借着它的引用走不通。
+            parsed.reply_to_message_id.clone().filter(|id| {
+                event.get("message_id").and_then(value_id_string).as_deref() != Some(id.as_str())
             })
         })
         .flatten();
-    parsed.quoted_message_data = if let Some(quoted_message_id) = quoted_message_id {
+    parsed.quoted_message_data = if let Some(quoted_message_id) = quoted_message_id.as_deref() {
         match get_message_data(&conn, quoted_message_id, QUOTED_MESSAGE_LOOKUP_TIMEOUT).await {
             Ok(data) => {
                 let info = parse_message_info(&data, self_id)
@@ -190,8 +215,37 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                         t("OneBot quoted-message metadata was missing or mismatched", "OneBot 引用消息元数据缺失或不匹配")
                     );
                 }
-                if info.is_some() {
-                    inbound_event.replied_message = info;
+                if let Some(mut info) = info {
+                    // 被引用的那条本身是合并转发时,`parse_message_info` 只拿到
+                    // 一个空正文——用户引用一条转发再问"里面是什么"是最自然的
+                    // 姿势,而 Miyu 会如实说"那条在我这儿是空的"(08-26 实测)。
+                    // 这里把它也展开;图片并入当前消息的图片位。
+                    let mut quoted_parsed =
+                        parse_message(data.get("message"), data.get("raw_message"), self_id);
+                    if !quoted_parsed.forward_ids.is_empty() {
+                        if let Some(text) =
+                            crate::platforms::onebot::forward::expand_quoted_forwards(
+                                &conn,
+                                &mut quoted_parsed,
+                                &mut parsed,
+                            )
+                            .await
+                        {
+                            info.text = text;
+                            tracing::info!(
+                                target: "miyu::qq",
+                                self_id,
+                                conversation_id = target.conversation_id(),
+                                quoted_message_id,
+                                "{}",
+                                t(
+                                    "OneBot expanded a forwarded message inside a quote",
+                                    "OneBot 已展开被引用消息中的合并转发"
+                                )
+                            );
+                        }
+                    }
+                    inbound_event.replied_message = Some(info);
                     Some(data)
                 } else {
                     // Prevent the image merge stage from repeating an

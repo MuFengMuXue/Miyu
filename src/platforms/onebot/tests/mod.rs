@@ -7,6 +7,7 @@ mod admission;
 mod connection;
 mod delivery;
 mod files;
+mod forward;
 mod identity;
 mod notices;
 mod parsing;

@@ -16,6 +16,7 @@ mod caches;
 mod connection;
 mod dispatch;
 mod files;
+mod forward;
 mod group_join;
 mod identity;
 mod images;

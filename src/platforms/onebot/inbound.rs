@@ -37,6 +37,9 @@ pub(in crate::platforms::onebot) const MAX_ONEBOT_ID_BYTES: usize = 128;
 
 pub(in crate::platforms::onebot) const MAX_INBOUND_FILE_NAME_CHARS: usize = 512;
 
+/// 一条消息里最多跟进几个合并转发。转发套转发的深度另有上限(见 `forward`)。
+pub(in crate::platforms::onebot) const MAX_INBOUND_FORWARDS: usize = 4;
+
 #[derive(Default)]
 pub(in crate::platforms::onebot) struct InboundMessage {
     pub(in crate::platforms::onebot) text: String,
@@ -50,6 +53,10 @@ pub(in crate::platforms::onebot) struct InboundMessage {
     pub(in crate::platforms::onebot) quoted_message_data: Option<Value>,
     pub(in crate::platforms::onebot) mentioned_user_ids: Vec<String>,
     pub(in crate::platforms::onebot) media: Vec<PlatformInboundMedia>,
+    /// 合并转发的资源 id。段里只有这个 id,内容要另外调 `get_forward_msg` 取
+    /// (见 `forward`)——解析是同步的,拿不到连接,所以只记 id,展开留给
+    /// dispatch。
+    pub(in crate::platforms::onebot) forward_ids: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -556,6 +563,16 @@ pub(in crate::platforms::onebot) fn parse_cq_string(raw: &str, self_id: i64) -> 
                     .map(|value| decode_cq_text(value))
                     .and_then(bounded_onebot_id);
             }
+            "forward" if parsed.forward_ids.len() < MAX_INBOUND_FORWARDS => {
+                if let Some(id) = parameters
+                    .get("id")
+                    .or_else(|| parameters.get("res_id"))
+                    .map(|value| decode_cq_text(value))
+                    .and_then(bounded_onebot_id)
+                {
+                    parsed.forward_ids.push(id);
+                }
+            }
             "image" | "file" | "record" | "video" | "face"
                 if parsed.media.len() < MAX_INBOUND_MEDIA_RECORDS =>
             {
@@ -695,6 +712,17 @@ pub(in crate::platforms::onebot) fn parse_message(
                     .get("id")
                     .and_then(value_id_string)
                     .and_then(bounded_onebot_id);
+            }
+            "forward" if parsed.forward_ids.len() < MAX_INBOUND_FORWARDS => {
+                // 实现之间字段名不统一:NapCat 用 id,部分实现用 res_id。
+                if let Some(id) = data
+                    .get("id")
+                    .or_else(|| data.get("res_id"))
+                    .and_then(value_id_string)
+                    .and_then(bounded_onebot_id)
+                {
+                    parsed.forward_ids.push(id);
+                }
             }
             "file" => {
                 if parsed.media.len() < MAX_INBOUND_MEDIA_RECORDS {
