@@ -539,11 +539,14 @@ textarea:disabled {
   gap: 6px;
 }
 
-/* 会话名的字重定在 `.session-copy strong`(见下方);当前会话用中等字重
-   区分——特异性要压过那条,否则被同特异性、位置更靠后的规则盖掉
-   (08-26 实录:先在这里写 400 没生效,就是被后面那条 600 覆盖了)。 */
+/* 会话名的字重定在 `.session-copy strong`(见下方);当前会话提半档到 500。
+   原来写 600 是想要"略重",但本机字体栈没有 SemiBold 字面,600 会回退到
+   Bold——12.5px 实测字面宽度 400=180.50 / 500=181.34 / 600=182.45 / 700=182.45,
+   600 与 700 一模一样,于是当前会话整行变成真加粗(08-26 用户两次点名)。
+   500 命中 Noto Sans CJK Medium,是真实存在的中间档。特异性要压过下面那条,
+   否则被同特异性、位置更靠后的规则盖掉。 */
 .session-item.active .session-copy strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .session-default-badge {
@@ -618,7 +621,7 @@ body[data-theme="graphite"] .session-unread-dot {
 
 .session-copy strong {
   font-size: 12.5px;
-  /* 语义上是 <strong>,视觉上不该整列粗体:层次交给背景与当前项的 600。 */
+  /* 语义上是 <strong>,视觉上不该整列粗体:层次交给背景与当前项的 500。 */
   font-weight: 400;
 }
 
