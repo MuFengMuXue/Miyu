@@ -189,6 +189,7 @@ impl Agent {
                             source: &usage_source,
                             provider: Some(client.provider_id()),
                             model: None,
+                            kind: None,
                         };
                         let _ = state.add_auxiliary_usage(&usage, meta);
                     }

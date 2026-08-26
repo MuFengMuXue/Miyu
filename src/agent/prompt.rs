@@ -107,11 +107,12 @@ pub(in crate::agent) fn with_host_environment(
 /// 注入"的投影(见 `chat_messages`)。ISO 日期比中文日期短,星期用三字母。
 pub(in crate::agent) fn runtime_context(mode: AgentMode, platform: bool) -> String {
     // 时区随时间一起给(%:z 固定 6 字符,同粒度内字节稳定):模型换算
-    // 绝对时间/跨时区事件时不用再猜本机时区。
+    // 绝对时间/跨时区事件时不用再猜本机时区。带 UTC 前缀写成
+    // "UTC+09:00"——裸偏移量容易被当成时间的一部分读(08-26 用户点名)。
     if platform {
         return format!(
             "<runtime now=\"{}\"/>",
-            Local::now().format("%Y-%m-%d %a %H:%M %:z")
+            Local::now().format("%Y-%m-%d %a %H:%M UTC%:z")
         );
     }
     let cwd = crate::tools::workspace::effective_workdir()
@@ -120,7 +121,7 @@ pub(in crate::agent) fn runtime_context(mode: AgentMode, platform: bool) -> Stri
     let _ = mode;
     format!(
         "<runtime now=\"{}\" cwd=\"{}\"/>",
-        Local::now().format("%Y-%m-%d %a %H:00 %:z"),
+        Local::now().format("%Y-%m-%d %a %H:00 UTC%:z"),
         xml_attr_escape(&cwd),
     )
 }

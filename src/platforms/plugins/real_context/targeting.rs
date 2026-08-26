@@ -276,6 +276,38 @@ pub(in crate::platforms::plugins::real_context) fn format_mentioned_users(
     )
 }
 
+/// 本轮真正要回答的那条消息 id。默认是触发消息,纯附件(图片/表情)让位给
+/// 合并集里最新的文字消息——历史块要据此把它摘出去(否则同一条既在
+/// `[Prior group chat records]` 又在 `[New messages received this turn]`,
+/// 08-26 审查抓到)。
+pub(in crate::platforms::plugins::real_context) fn answer_target_id(
+    context: &PlatformTurnContext,
+    event: &PlatformInboundEvent,
+) -> String {
+    let mut targets = active_targets_from_context(context);
+    if !targets
+        .iter()
+        .any(|target| target.message_id == event.message_id)
+    {
+        targets.push(active_reply_target(event));
+    }
+    normalize_active_targets(&mut targets, &event.sender_id);
+    let current_is_supplemental = targets
+        .iter()
+        .find(|target| target.message_id == event.message_id)
+        .is_some_and(|target| target.supplemental)
+        && targets.iter().any(|target| !target.supplemental);
+    if !current_is_supplemental {
+        return event.message_id.clone();
+    }
+    targets
+        .iter()
+        .filter(|target| !target.supplemental)
+        .next_back()
+        .map(|target| target.message_id.clone())
+        .unwrap_or_else(|| event.message_id.clone())
+}
+
 pub(in crate::platforms::plugins::real_context) fn active_target_prompt(
     context: &PlatformTurnContext,
     event: &PlatformInboundEvent,
@@ -360,27 +392,33 @@ pub(in crate::platforms::plugins::real_context) fn active_target_prompt(
         line
     };
 
-    let primary = targets
-        .iter()
-        .filter(|target| !target.supplemental)
-        .map(&format_target)
-        .collect::<Vec<_>>();
-    let supplements = targets
-        .iter()
-        .filter(|target| target.supplemental)
-        .map(format_target)
-        .collect::<Vec<_>>();
+    // 谁占"当前消息"位。默认是最新那条,但纯附件(图片/表情,supplemental)
+    // 让位给合并集里最新的文字消息(08-26 取证:文字提问触发回复后补一张
+    // 表情包,表情占了当前消息位,模型先评图再答题,真正的问题被降级成
+    // 背景)。`supplemental` 本来就是"补充材料,不该被单独回复"的意思,
+    // 这里让结构兑现它——加一句"看到图片先答文字"的指令是压不住的。
+    let answer_target = answer_target_id(context, event);
     // 当前消息同样走 format_target:署名/时间/msg id/reply-to/@mentions 全套
     // 坐标(08-24 取证:裸文本"卡死了？"贴在他人求助截图后,模型把 A 的问题
     // 安到了 B 头上——判读线索被我们自己削没了)。
     let current = targets
         .iter()
-        .find(|target| target.message_id == event.message_id)
+        .find(|target| target.message_id == answer_target)
         .map(&format_target)
         .unwrap_or_else(|| current_content.trim().to_string());
-    let previous = primary
-        .into_iter()
-        .filter(|line| !line.contains(&format!("[msg={}]", event.message_id)))
+    // 占了当前消息位的那条不再进其它块——否则同一条渲染两遍(08-26 实录:
+    // 表情包同时出现在"本轮新消息"和"随后补充"里,双份强调)。
+    let rest = targets
+        .iter()
+        .filter(|target| target.message_id != answer_target);
+    let previous = rest
+        .clone()
+        .filter(|target| !target.supplemental)
+        .map(&format_target)
+        .collect::<Vec<_>>();
+    let supplements = rest
+        .filter(|target| target.supplemental)
+        .map(&format_target)
         .collect::<Vec<_>>();
     // 块标记同样只描述内容本身。原来结尾那条「只回复当前消息…补充材料不应被单独
     // 回复。需要调用工具时…」整条删除:前两句是跨轮指令丢失的语义来源,末句是多余
@@ -436,7 +474,24 @@ pub(in crate::platforms::plugins::real_context) fn adaptive_response_target(
     event: &PlatformInboundEvent,
     settings: &RealContextPluginSettings,
 ) -> Option<ResponseTarget> {
-    let target = response_target(event, settings);
+    let mut target = response_target(event, settings);
+    // 纯附件让出"当前消息"位之后,引用也跟着钉回那条文字消息(08-26):
+    // 答的是问题,却引用一张表情包,读起来是两码事。
+    if let Some(target) = target.as_mut() {
+        if active_reply_target(event).supplemental {
+            if let Some(text_target) = active_targets_from_context(context)
+                .into_iter()
+                .filter(|candidate| {
+                    !candidate.supplemental
+                        && candidate.sender_id == event.sender_id
+                        && !candidate.message_id.is_empty()
+                })
+                .next_back()
+            {
+                target.message_id = text_target.message_id;
+            }
+        }
+    }
     context.set_adaptive_response_target(
         target.clone(),
         AdaptiveResponseTargetPolicy::new(

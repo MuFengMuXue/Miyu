@@ -1,7 +1,7 @@
 //! 并发闸门与限流。
 
-use crate::platforms::*;
 use super::shared::*;
+use crate::platforms::*;
 
 #[test]
 fn rate_window_allows_then_drops_with_single_notice() {
@@ -235,7 +235,8 @@ async fn session_preemption_invalidates_old_waiters_but_not_new_arrivals() {
     });
     assert_eq!(started_rx.recv().await, Some("old"));
 
-    let command_ticket = runtime.preempt_session_turns("session-a");
+    let command_ticket =
+        runtime.preempt_session_turns("session-a", PlatformSessionLimits::default());
     assert!(!first.is_valid());
     let command_tx = order_tx.clone();
     let command_started = started_tx.clone();

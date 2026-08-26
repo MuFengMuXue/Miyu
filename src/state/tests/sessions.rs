@@ -579,6 +579,7 @@ fn clearing_pinned_session_content_is_isolated_and_preserves_usage_and_binding()
                 source: "agent",
                 provider: Some("prov"),
                 model: Some("model"),
+                kind: None,
             },
         )
         .unwrap();

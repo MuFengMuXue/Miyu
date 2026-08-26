@@ -63,6 +63,69 @@ fn consecutive_identical_history_rounds_collapse_on_replay() {
     assert!(!text.contains("r2") && !text.contains("r3"));
 }
 
+/// pop 溢出策略(平台群会话默认)必须真的裁掉旧回合。08-25 线上实录:某群
+/// 会话堆到 68 万 token(窗口 20 万)仍未裁剪,最后靠 /reset 才收场——这条
+/// 用例把"超水位就逐出到目标线"钉死在库里。
+#[tokio::test]
+async fn pop_overflow_evicts_until_under_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let mut config = AppConfig::default();
+    // 与线上群一致的口径:窗口 20 万、水位 0.9、每次裁到 (1-0.6)=8 万。
+    let provider = config
+        .providers
+        .iter_mut()
+        .find(|provider| !provider.is_claude_code())
+        .unwrap();
+    provider
+        .model_context_window
+        .insert(provider.default_model.clone(), 200_000);
+    config.context.trim_at_ratio = 0.9;
+    config.context.trim_batch_ratio = 0.6;
+    config.context.on_overflow = "pop".to_string();
+
+    let state = StateStore::new(&paths).unwrap();
+    state.init_files().unwrap();
+    // 40 个大回合:每个约 3 万字符,合计远超水位。
+    let bulk = "群聊记录一行".repeat(2_500);
+    for index in 0..40 {
+        let turn_id = format!("turn-{index}");
+        state.start_turn(&turn_id, &bulk, 999_999).unwrap();
+        state.complete_turn(&turn_id, &bulk, None).unwrap();
+    }
+    let client =
+        OpenAiCompatibleClient::new(config.provider(None).unwrap(), &config, &paths).unwrap();
+    let agent = Agent::new(
+        config,
+        &paths,
+        state.clone(),
+        client,
+        ToolRegistry::new(),
+        AgentMode::Normal,
+    )
+    .unwrap();
+
+    let window = agent.context_window().expect("窗口应可解析");
+    assert_eq!(window, 200_000);
+    let before = agent.effective_context_tokens().unwrap();
+    assert!(
+        before as usize >= (window as f32 * 0.9) as usize,
+        "造出来的会话没到水位: {before}"
+    );
+
+    let evicted = agent.trim_visible_context().unwrap();
+    assert!(!evicted.is_empty(), "超水位却一个回合都没裁");
+    let after = agent.effective_context_tokens().unwrap();
+    assert!(
+        (after as usize) < (window as f32 * 0.9) as usize,
+        "裁剪后仍在水位之上: {after}"
+    );
+    // 逐出的是最老的,最新一轮必须留着。
+    let remaining = state.load_visible_turns().unwrap();
+    assert!(remaining.iter().any(|turn| turn.turn_id == "turn-39"));
+    assert!(!remaining.iter().any(|turn| turn.turn_id == "turn-0"));
+}
+
 /// 剪枝必须幂等:第二次扫过不能再改写,否则每次落库都掰一次前缀。
 #[test]
 fn tool_result_pruning_is_bounded_and_idempotent() {

@@ -574,7 +574,11 @@ impl RealContextPlugin {
                     context.config.active_persona_scope(),
                     query_limit,
                 )
-                .before_ingress_order(ingress_order)
+                // 不再以触发消息为刀口(08-26 用户点名):主动回复判断可能跑
+                // 几秒到几十秒,期间群里聊到哪儿了,回复时就该看到哪儿——
+                // 拿判断那一刻的上下文作答等于永远慢一拍。取到查询时为止,
+                // 当前消息由 prepare_history 摘出去单独渲染;水位只按真正
+                // 渲染出来的消息推进,后到的消息该有自己的回合照样有。
                 .after_ingress_order(watermark),
             )
             .await?;
@@ -587,7 +591,12 @@ impl RealContextPlugin {
         let mut history = page.messages;
         let queried_messages = history.len();
         if let Some(event) = context.inbound_event() {
-            prepare_history(&mut history, &event.message_id, count);
+            // 摘的是"本轮要回答的那条",不一定是触发消息:纯附件让位后,占了
+            // 当前消息位的文字消息同样不能再留在历史块里(08-26 审查)。
+            prepare_history(&mut history, &answer_target_id(context, event), count);
+            if answer_target_id(context, event) != event.message_id {
+                prepare_history(&mut history, &event.message_id, count);
+            }
         } else if history.len() > count {
             history.drain(..history.len() - count);
         }

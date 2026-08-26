@@ -289,6 +289,55 @@ fn restraint_matches_deployed_medium_defaults() {
     assert_eq!(restraint_adjustments(false, "strong", 10.0), (0.0, 0.0));
 }
 
+/// 纯附件让位(08-26 取证:文字提问触发回复后补一张表情包,表情占了"本轮
+/// 新消息"位,模型先评图再答题;而且同一张图还被渲染两遍——"本轮新消息"
+/// 与"随后补充"各一份)。修好后:文字占当前消息位,附件只在补充块出现一次。
+#[test]
+fn pure_attachment_yields_the_current_slot_to_the_text_message() {
+    let (_temp, context) = availability_context(BotSendAvailability::Available);
+    let mut text = inbound_event();
+    text.message_id = "msg-text".to_string();
+    text.text = "帮我看看这个报错怎么修".to_string();
+    let mut image = inbound_event();
+    image.message_id = "msg-image".to_string();
+    image.text.clear();
+    image.media.push(crate::platforms::PlatformInboundMedia {
+        kind: PlatformMediaKind::Image,
+        id: Some("img-1".to_string()),
+        name: None,
+        url: None,
+    });
+    set_active_targets(&context, &[active_reply_target(&text)]);
+
+    let prompt = active_target_prompt(&context, &image, "（对方发送了 1 张图片）");
+    let head = prompt.lines().nth(1).unwrap();
+    assert!(
+        head.contains("[msg=msg-text]") && head.contains("帮我看看这个报错怎么修"),
+        "当前消息位应让给文字消息: {head}"
+    );
+    // 图片只出现一次,且在补充块里。
+    assert_eq!(prompt.matches("[msg=msg-image]").count(), 1, "{prompt}");
+    let image_line = prompt
+        .lines()
+        .position(|line| line.contains("[msg=msg-image]"))
+        .unwrap();
+    let supplement_header = prompt
+        .lines()
+        .position(|line| line.contains("[Follow-up messages sent later by the same sender"))
+        .unwrap();
+    assert!(
+        image_line > supplement_header,
+        "图片应排在补充块之下: {prompt}"
+    );
+    // 文字消息不再在"本轮早先消息"里重复出现。
+    assert_eq!(prompt.matches("[msg=msg-text]").count(), 1, "{prompt}");
+
+    // 引用也跟着钉回文字消息:答问题却引用表情包读起来是两码事。
+    let settings = RealContextPluginSettings::default();
+    let target = adaptive_response_target(&context, &image, &settings).expect("应有回复定向");
+    assert_eq!(target.message_id, "msg-text", "引用应指向文字消息");
+}
+
 /// 当前消息引用了别人的消息:署名行下要带 reply-to 支路(被引用者的
 /// msg id/署名/原文),模型不用再去元数据 JSON 里自行关联。
 #[test]

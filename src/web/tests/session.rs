@@ -796,3 +796,97 @@ async fn cancelling_an_autonomous_round_disarms_the_goal() {
     let after = state.state_store.goal(&session_id).unwrap().unwrap();
     assert_eq!(after.phase, crate::state::GoalPhase::Active);
 }
+
+/// 工具桥寻址平台会话(08-26):没有活回合时照旧拒绝(桥不该在回合外碰平台
+/// 会话),回合在跑时放行——这是 claude-code 供应商在群聊里拿到平台工具的
+/// 唯一入口,实测此前 `tool-call --list` 一律报"找不到该会话"。
+#[test]
+fn tool_bridge_addresses_platform_sessions_only_during_a_live_turn() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = DaemonState::for_test(test_paths(temp.path()), 8300).unwrap();
+    let persona = active_persona_scope(&state);
+    let platform = state
+        .state_store
+        .create_session(&persona, "群会话", "user", None)
+        .unwrap();
+    state
+        .state_store
+        .bind_platform_session(
+            &PlatformSessionBindingKey {
+                platform: "onebot".to_string(),
+                account_id: "10000".to_string(),
+                conversation_kind: "group".to_string(),
+                conversation_id: "130515298".to_string(),
+                participant_id: None,
+                persona,
+            },
+            &platform.session_id,
+        )
+        .unwrap();
+    let target = ipc::SessionRef::Id {
+        id: platform.session_id.clone(),
+    };
+
+    assert!(
+        resolve_tool_bridge_session_ref(&state, &target).is_err(),
+        "回合外不应放行平台会话"
+    );
+
+    let (_temp2, context, _adapter) = crate::platforms::tests::shared::test_turn_context(true);
+    let context = std::sync::Arc::new(context);
+    let _live = crate::platforms::LiveTurnGuard::register(&platform.session_id, &context);
+    let resolved = resolve_tool_bridge_session_ref(&state, &target).expect("活回合应放行");
+    assert_eq!(resolved.session_id, platform.session_id);
+}
+
+/// 桥给平台会话的工具面必须与平台回合同源(08-26 审查抓到:桥原来发的是
+/// owner 面全量 registry,非管理员群友经它就能调 run_command / claude_code)。
+/// 退回 apply_platform_turn_scope 之前,这两条断言会拿到宿主工具而报红。
+#[test]
+fn tool_bridge_scopes_platform_tools_like_a_real_turn() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let mut config = AppConfig::default();
+    config.tools.enabled = true;
+    // 非管理员群友:受限底座,宿主工具一律没有。
+    let (_temp2, guest, _adapter) = crate::platforms::tests::shared::test_turn_context(false);
+    let guest = std::sync::Arc::new(guest);
+    assert!(!guest.host_tools_allowed());
+    let mut registry =
+        crate::tools::build_tool_registry(&config, &paths, AgentMode::Normal, false).unwrap();
+    assert!(registry.contains("run_command"), "底座本应有宿主工具");
+    crate::platforms::apply_platform_turn_scope(&mut registry, &config, &paths, &guest, None);
+    assert!(
+        !registry.contains("run_command"),
+        "非管理员会话不得有 run_command"
+    );
+    assert!(!registry.contains("edit"), "非管理员会话不得有写盘工具");
+
+    // 管理员会话:保留底座(claude_code 委托工具 08-21 已删除,收口函数里
+    // 那条 unregister 是它万一回归时的常备闸,当下无从断言)。
+    // 注意 test_turn_context 的入参是适配器的 fail_first,不是管理员标志——
+    // 管理员身份必须显式设(08-26:我第一版把它当管理员用,断言等于没测)。
+    let (_temp3, mut admin, _adapter2) = crate::platforms::tests::shared::test_turn_context(true);
+    admin.is_admin = true;
+    let admin = std::sync::Arc::new(admin);
+    assert!(admin.host_tools_allowed(), "管理员应放行宿主工具");
+    let mut registry =
+        crate::tools::build_tool_registry(&config, &paths, AgentMode::Normal, false).unwrap();
+    crate::platforms::apply_platform_turn_scope(&mut registry, &config, &paths, &admin, None);
+    assert!(registry.contains("run_command"), "管理员会话保留底座");
+
+    // 受限底座可由调用方复用(回合路径传缓存,不每轮重建):传进来的那份就是
+    // 最终工具面——两条路共用同一个收口函数,口径不会再各写各的。
+    let mut cached = crate::tools::restricted_platform_registry(&config, &paths);
+    cached.unregister("read_file");
+    let mut registry =
+        crate::tools::build_tool_registry(&config, &paths, AgentMode::Normal, false).unwrap();
+    crate::platforms::apply_platform_turn_scope(
+        &mut registry,
+        &config,
+        &paths,
+        &guest,
+        Some(&cached),
+    );
+    assert!(!registry.contains("read_file"), "应采用调用方给的受限底座");
+}

@@ -186,12 +186,8 @@ pub(in crate::web) async fn handle_session_command(
                     // 桥必须能寻址阅后即焚(ask)会话:回合正跑在里面,run_command 的
                     // 脚本与 MCP 桥的内层调用都以它为身份。只认 user 会话会让
                     // 单次 CLI 形态下的整条工具桥 404(真机实测踩坑)。
-                    resolve_local_session_ref_with_kinds(
-                        state,
-                        &ipc::SessionRef::Id { id: session },
-                        TURN_TARGET_KINDS,
-                    )?
-                    .session_id
+                    resolve_tool_bridge_session_ref(state, &ipc::SessionRef::Id { id: session })?
+                        .session_id
                 }
                 None => store.session_id().to_string(),
             };
@@ -274,12 +270,8 @@ pub(in crate::web) async fn handle_session_command(
                     // 桥必须能寻址阅后即焚(ask)会话:回合正跑在里面,run_command 的
                     // 脚本与 MCP 桥的内层调用都以它为身份。只认 user 会话会让
                     // 单次 CLI 形态下的整条工具桥 404(真机实测踩坑)。
-                    resolve_local_session_ref_with_kinds(
-                        state,
-                        &ipc::SessionRef::Id { id: session },
-                        TURN_TARGET_KINDS,
-                    )?
-                    .session_id
+                    resolve_tool_bridge_session_ref(state, &ipc::SessionRef::Id { id: session })?
+                        .session_id
                 }
                 None => store.session_id().to_string(),
             };
@@ -503,7 +495,29 @@ pub(in crate::web) fn attach_owner_turn_tools(
     if !config.tools.enabled {
         return;
     }
-    // 与 task.rs 相同的条件:平台会话进不了桥,ask_question 两种模式都有。
+    // 平台会话:把正在跑的那一轮的上下文取回来注册平台工具。claude-code
+    // 供应商忽略请求里的 tools,全靠这条 MCP 桥——不挂上去,群管理/撤回/
+    // 艾特/发送在群聊里整套消失(08-26 用户点名)。权限判定同源:用的就是
+    // 主线回合那个上下文。
+    //
+    // 这里必须与 turns/task.rs 的平台回合底座一致(08-26 审查抓到:桥原来
+    // 拿的是 owner 面全量 registry,非管理员群友经由桥就能调 run_command、
+    // claude_code——§09 owner-only 被绕过)。收口在 apply_platform_turn_scope。
+    if let Some(platform) = crate::platforms::live_turn_context(session_id) {
+        crate::platforms::apply_platform_turn_scope(
+            registry,
+            config,
+            &state.paths,
+            &platform,
+            None,
+        );
+        if !config.platforms.qq.memory.write_enabled {
+            registry.unregister("remember_fact");
+        }
+        crate::platforms::register_platform_tools(registry, platform);
+        return;
+    }
+    // 与 task.rs 相同的条件:非平台会话才有所有者侧工具。
     crate::tools::register_ask_question(registry);
     if mode == AgentMode::Normal {
         crate::tools::register_webui_artifact_tools(registry, &state.paths, session_id);

@@ -1,7 +1,7 @@
 //! 准入判定、并发与限流。
 
-use crate::platforms::onebot::*;
 use super::shared::*;
+use crate::platforms::onebot::*;
 
 #[test]
 fn group_trigger_matrix() {
@@ -135,6 +135,9 @@ async fn same_conversation_messages_can_be_observed_in_parallel() {
     {
         let mut manager = state.manager.lock().unwrap();
         manager.config.platforms.qq.enabled = true;
+        // 会话内并行是显式开关(08-26 起默认串行);这条用例量的就是开着时
+        // 的并行准入。
+        manager.config.platforms.qq.session_parallel = true;
         manager.config.platforms.qq.group_chats.allow_non_whitelist = true;
         manager
             .config
@@ -200,6 +203,94 @@ async fn same_conversation_messages_can_be_observed_in_parallel() {
     second.await.unwrap();
 }
 
+/// 会话内并行默认关闭(08-26):同一个群的第二条消息必须等第一条回合让出
+/// 席位才被观察到——并发回合各答各的正是跨线代答/重复答题的土壤。退回
+/// `session_limits_for` 的串行钳制,第二条会立刻被观察到,断言报红。
+#[tokio::test]
+async fn same_conversation_messages_serialize_when_parallelism_is_off() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = test_web_state(temp.path(), 8300);
+    {
+        let mut manager = state.manager.lock().unwrap();
+        manager.config.platforms.qq.enabled = true;
+        manager.config.platforms.qq.group_chats.allow_non_whitelist = true;
+        assert!(
+            !manager.config.platforms.qq.session_parallel,
+            "默认应为串行"
+        );
+        manager
+            .config
+            .platforms
+            .qq
+            .group_chats
+            .non_whitelist_rate_limit
+            .max_messages = 0;
+    }
+    let (observed_tx, mut observed_rx) = mpsc::unbounded_channel();
+    let release_first = Arc::new(tokio::sync::Notify::new());
+    assert!(state
+        .platforms
+        .plugins
+        .set(Ok(Arc::new(
+            crate::platforms::plugins::PlatformPluginRegistry::new(vec![Arc::new(
+                BlockingObserverPlugin {
+                    observed: observed_tx,
+                    release_first: release_first.clone(),
+                },
+            )])
+        )))
+        .is_ok());
+    let (handle, _frames) = test_connection(None);
+    let event = |message_id: i64| {
+        json!({
+            "post_type": "message",
+            "message_type": "group",
+            "self_id": 10000,
+            "user_id": 7,
+            "group_id": 42,
+            "group_name": "test group",
+            "message_id": message_id,
+            "message": [{ "type": "text", "data": { "text": "ordinary" } }],
+            "sender": { "nickname": "seven" },
+        })
+    };
+
+    let first = tokio::spawn(handle_message(
+        state.clone(),
+        handle.clone(),
+        event(1),
+        next_ingress_order(),
+    ));
+    assert_eq!(observed_rx.recv().await.as_deref(), Some("1"));
+
+    let second = tokio::spawn(handle_message(
+        state.clone(),
+        handle,
+        event(2),
+        next_ingress_order(),
+    ));
+    // 第一条还占着席位:第二条必须卡在准入闸上。
+    assert!(
+        tokio::time::timeout(Duration::from_millis(80), observed_rx.recv())
+            .await
+            .is_err(),
+        "串行模式下第二条消息不应与第一条同时进入"
+    );
+
+    // 放行第一条,第二条随即被观察到——是排队而不是丢弃。
+    release_first.notify_one();
+    first.await.unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), observed_rx.recv())
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("2")
+    );
+    release_first.notify_one();
+    second.await.unwrap();
+}
+
 #[tokio::test]
 async fn same_conversation_judgements_reuse_parallel_turn_admission() {
     let temp = tempfile::tempdir().unwrap();
@@ -208,6 +299,7 @@ async fn same_conversation_judgements_reuse_parallel_turn_admission() {
         let mut manager = state.manager.lock().unwrap();
         manager.config.platforms.qq.enabled = true;
         manager.config.platforms.qq.group_chats.allow_non_whitelist = true;
+        manager.config.platforms.qq.session_parallel = true;
         manager.config.platforms.qq.session_limits = crate::config::PlatformSessionLimits {
             running: 2,
             queued: 2,
@@ -306,8 +398,8 @@ fn admission_matrix_uses_private_and_group_conversation_buckets() {
 
     let private_guest = admission_for(&config, Target::Private { user_id: 3 }, 100, 3);
     assert!(private_guest.allowed);
-    assert_eq!(private_guest.rate_limit.max_messages, 2);
-    assert_eq!(private_guest.rate_limit.window_seconds, 600);
+    assert_eq!(private_guest.rate_limit.max_messages, 5);
+    assert_eq!(private_guest.rate_limit.window_seconds, 300);
     assert_eq!(private_guest.rate_key.as_deref(), Some("qq:100:private:3"));
     assert!(private_guest.use_non_whitelist_text_models);
 
@@ -320,8 +412,8 @@ fn admission_matrix_uses_private_and_group_conversation_buckets() {
 
     let group_guest = admission_for(&config, Target::Group { group_id: 11 }, 100, 3);
     assert!(group_guest.allowed);
-    assert_eq!(group_guest.rate_limit.max_messages, 2);
-    assert_eq!(group_guest.rate_limit.window_seconds, 600);
+    assert_eq!(group_guest.rate_limit.max_messages, 5);
+    assert_eq!(group_guest.rate_limit.window_seconds, 300);
     assert_eq!(group_guest.rate_key.as_deref(), Some("qq:100:group:11"));
     assert!(group_guest.use_non_whitelist_text_models);
 
@@ -416,8 +508,7 @@ fn dynamic_access_grants_feed_the_same_admission_matrix_for_every_bot() {
     config.private_chats.allow_non_whitelist = false;
     config.group_chats.allow_non_whitelist = false;
 
-    let admin =
-        admission_for_with_state(&config, &state, Target::Group { group_id: 99 }, 999, 1);
+    let admin = admission_for_with_state(&config, &state, Target::Group { group_id: 99 }, 999, 1);
     assert!(admin.allowed);
     assert!(admin.rate_key.is_none());
     assert!(admin.use_non_whitelist_text_models);
@@ -458,9 +549,8 @@ async fn tool_followup_reservation_requires_the_same_conversation_and_sender() {
         "sender": { "nickname": "Alice" }
     });
     let (connection, _frames) = test_connection(None);
-    let context = Arc::new(
-        platform_turn_context(&state, connection, target, &event, config, None).unwrap(),
-    );
+    let context =
+        Arc::new(platform_turn_context(&state, connection, target, &event, config, None).unwrap());
     let followup = PlatformFollowupRun::new(context);
     followup.ingress().tool_started("call_1");
     let session_id: Arc<str> = "qq-session".into();

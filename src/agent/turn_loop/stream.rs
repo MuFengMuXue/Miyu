@@ -203,6 +203,7 @@ impl Agent {
                 source: self.usage_source(),
                 provider: result.provider_id.as_deref(),
                 model: result.model.as_deref(),
+                kind: None,
             };
             self.state.add_usage(&usage, meta)?;
         }

@@ -4,5 +4,5 @@ mod activity;
 mod logging;
 mod reply;
 mod scheduling;
-mod shared;
+pub(crate) mod shared;
 mod tools;

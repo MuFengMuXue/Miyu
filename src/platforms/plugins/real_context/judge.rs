@@ -117,6 +117,9 @@ pub(super) async fn run(
                 source: &context.conversation.platform,
                 provider: result.provider_id.as_deref(),
                 model: result.model.as_deref(),
+                // 主动回复判断:每条群消息都跑,量级足以盖过主线回复——
+                // 统计里必须能单独看见(08-26)。
+                kind: Some(crate::state::USAGE_KIND_JUDGE),
             };
             if let Err(error) = context.state_store.add_auxiliary_usage(usage, meta) {
                 tracing::warn!(error = %error, "{}", crate::i18n::text("recording real-context judge usage failed", "记录真实上下文判断用量失败"));

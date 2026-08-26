@@ -699,3 +699,26 @@ fn tool_call_template_leaks_are_stripped_from_outgoing_replies() {
     let mut clean = OutboundMessage::text(OutboundOrigin::FinalReply, "正常回复,不含模板。");
     assert!(!strip_tool_call_leaks(&mut clean));
 }
+
+/// 活回合登记(08-26,MCP 桥拿平台工具的钥匙):守卫在场能取到上下文,
+/// 掉落即取不到;并行回合下后来者覆盖登记,旧守卫掉落不误删新的。
+#[test]
+fn live_turn_guard_scopes_the_platform_context() {
+    use crate::platforms::{live_turn_context, LiveTurnGuard};
+    let (_temp, context, _adapter) = test_turn_context(true);
+    let context = std::sync::Arc::new(context);
+    assert!(live_turn_context("sess-live").is_none());
+    let guard = LiveTurnGuard::register("sess-live", &context);
+    assert!(live_turn_context("sess-live").is_some());
+
+    let (_temp2, second, _adapter2) = test_turn_context(true);
+    let second = std::sync::Arc::new(second);
+    let newer = LiveTurnGuard::register("sess-live", &second);
+    drop(guard);
+    assert!(
+        live_turn_context("sess-live").is_some(),
+        "旧守卫掉落不应摘掉后来者的登记"
+    );
+    drop(newer);
+    assert!(live_turn_context("sess-live").is_none());
+}

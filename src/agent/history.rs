@@ -13,9 +13,18 @@ impl Agent {
         &self,
     ) -> Result<Vec<crate::state::StoredConversationEntry>> {
         let Some(context_window) = self.context_window() else {
-            // 窗口解析失败(池中任一端点 provider 未知/无窗口来源)会静默关闭
-            // 裁剪——这是 68 万 token 膨胀事故的候选路径之一,必须留痕。
-            tracing::warn!("context trim disabled: no context window could be resolved");
+            // 窗口解析失败(池里有 config 查不到的 provider,Err 被 .ok() 吞掉)
+            // 会静默关闭裁剪——68 万 token 膨胀事故的候选路径之一。日志打在
+            // miyu::qq 这条 target 上:默认日志级别只有它是 INFO,打在别处等于
+            // 没打(08-26 实证:昨天布的观测一行都没写出来)。
+            tracing::warn!(
+                target: "miyu::qq",
+                "{}",
+                crate::i18n::text(
+                    "context trim disabled: no context window could be resolved",
+                    "上下文裁剪已停用:解析不出上下文窗口"
+                )
+            );
             return Ok(Vec::new());
         };
         let track_loaded_tool_sources = self.tools_enabled
@@ -87,17 +96,24 @@ impl Agent {
         // 观测(08-25 膨胀取证:群会话 68 万 token 未被裁剪,归档 07:42 后
         // 静默停摆):水位越线的每次裁剪把门内数字全部留痕,零归档时告警。
         tracing::info!(
+            target: "miyu::qq",
             total,
             trigger,
-            target,
+            evict_to = target,
             planned = count,
             evictable = turns.len(),
-            "context trim engaged"
+            "{}",
+            crate::i18n::text("context trim engaged", "上下文裁剪已触发")
         );
         if count > 0 && turns.is_empty() {
             tracing::warn!(
+                target: "miyu::qq",
                 planned = count,
-                "context trim planned evictions but found no evictable turns"
+                "{}",
+                crate::i18n::text(
+                    "context trim planned evictions but found no evictable turns",
+                    "上下文裁剪算出要逐出的回合,却一个可逐出的都没有"
+                )
             );
         }
         archive_and_delete_visible_turns_checked(

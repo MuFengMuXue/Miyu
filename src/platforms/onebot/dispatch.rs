@@ -440,7 +440,7 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
             }
         }
     }
-    let session_limits = config.session_limits(
+    let session_limits = context.config.platforms.qq.session_limits(
         match target {
             Target::Private { .. } => PlatformConversationKind::Private,
             Target::Group { .. } => PlatformConversationKind::Group,

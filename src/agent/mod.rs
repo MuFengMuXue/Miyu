@@ -414,6 +414,7 @@ impl Agent {
                 source: self.usage_source(),
                 provider: compact.provider_id.as_deref(),
                 model: None,
+                kind: None,
             },
         )?;
         Ok(Some(ChatResult {
@@ -526,6 +527,7 @@ impl Agent {
                 source: self.usage_source(),
                 provider: compact.provider_id.as_deref(),
                 model: None,
+                kind: None,
             },
         )?;
         Ok(Some(ChatResult {

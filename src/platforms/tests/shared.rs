@@ -40,7 +40,7 @@ pub(super) fn test_group_members() -> Vec<PlatformGroupMember> {
         .collect()
 }
 
-pub(super) fn test_turn_context(
+pub(crate) fn test_turn_context(
     fail_first: bool,
 ) -> (tempfile::TempDir, PlatformTurnContext, Arc<CountingAdapter>) {
     let temp = tempfile::tempdir().unwrap();
@@ -138,7 +138,7 @@ impl plugins::PlatformPlugin for SuppressingToolPlugin {
     }
 }
 
-pub(super) struct CountingAdapter {
+pub(crate) struct CountingAdapter {
     pub(super) calls: AtomicUsize,
     pub(super) fail_first: bool,
     pub(super) messages: Mutex<Vec<OutboundMessage>>,

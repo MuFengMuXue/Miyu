@@ -276,6 +276,7 @@ impl Agent {
                                     source: self.usage_source(),
                                     provider: compact_result.provider_id.as_deref(),
                                     model: None,
+                                    kind: None,
                                 },
                             )?;
                             // Splice the rebuilt (compacted) history prefix in

@@ -5,7 +5,10 @@
 
 use crate::platforms::onebot::*;
 
-pub(in crate::platforms::onebot) fn message_info_matches_target(info: &PlatformMessageInfo, target: Target) -> bool {
+pub(in crate::platforms::onebot) fn message_info_matches_target(
+    info: &PlatformMessageInfo,
+    target: Target,
+) -> bool {
     let expected_kind = match target {
         Target::Private { .. } => ConversationKind::Private,
         Target::Group { .. } => ConversationKind::Group,
@@ -40,7 +43,16 @@ pub(in crate::platforms::onebot) async fn execute_builtin_command(
                         .to_string()
                     }
                     Ok(session_id) => {
-                        let ticket = state.platforms.preempt_session_turns(&session_id);
+                        let ticket = state.platforms.preempt_session_turns(
+                            &session_id,
+                            context.config.platforms.qq.session_limits(
+                                match context.conversation.kind {
+                                    ConversationKind::Private => PlatformConversationKind::Private,
+                                    ConversationKind::Group => PlatformConversationKind::Group,
+                                },
+                                &context.conversation.conversation_id,
+                            ),
+                        );
                         cancel_session_runs(state, &session_id);
                         let _session_turn = ticket.acquire().await.ok();
                         match clear_platform_session_content(state, session_id.clone()).await {
@@ -184,7 +196,16 @@ pub(in crate::platforms::onebot) async fn execute_builtin_command(
                     }
                     Ok(session_id) => {
                         let queued = state.platforms.queued_session_turns(&session_id);
-                        let ticket = state.platforms.preempt_session_turns(&session_id);
+                        let ticket = state.platforms.preempt_session_turns(
+                            &session_id,
+                            context.config.platforms.qq.session_limits(
+                                match context.conversation.kind {
+                                    ConversationKind::Private => PlatformConversationKind::Private,
+                                    ConversationKind::Group => PlatformConversationKind::Group,
+                                },
+                                &context.conversation.conversation_id,
+                            ),
+                        );
                         let cancelled = cancel_session_runs(state, &session_id);
                         // 等被取消的回合真正退出再报数,但设上限:回合卡在
                         // LLM 超时重试/慢工具里退不出来时,/stop 的回复被
@@ -229,7 +250,11 @@ pub(in crate::platforms::onebot) async fn execute_builtin_command(
 /// `/models` lists the globally configured models; `/models <index|provider/model>`
 /// switches this conversation's text model by writing a single-model pool into
 /// its per-conversation route (私聊/群聊专属配置), creating the route if needed.
-pub(in crate::platforms::onebot) fn execute_models_command(state: &DaemonState, target: Target, argument: Option<&str>) -> String {
+pub(in crate::platforms::onebot) fn execute_models_command(
+    state: &DaemonState,
+    target: Target,
+    argument: Option<&str>,
+) -> String {
     let kind = match target {
         Target::Private { .. } => PlatformConversationKind::Private,
         Target::Group { .. } => PlatformConversationKind::Group,
@@ -329,7 +354,10 @@ pub(in crate::platforms::onebot) fn execute_models_command(state: &DaemonState, 
     )
 }
 
-pub(in crate::platforms::onebot) fn stop_response_message(cancelled: usize, queued: usize) -> String {
+pub(in crate::platforms::onebot) fn stop_response_message(
+    cancelled: usize,
+    queued: usize,
+) -> String {
     if crate::i18n::is_zh() {
         match (cancelled, queued) {
             (0, 0) => "当前会话没有正在运行的任务。".to_string(),
@@ -349,7 +377,10 @@ pub(in crate::platforms::onebot) fn stop_response_message(cancelled: usize, queu
     }
 }
 
-pub(in crate::platforms::onebot) fn cancel_session_runs(state: &DaemonState, session_id: &str) -> usize {
+pub(in crate::platforms::onebot) fn cancel_session_runs(
+    state: &DaemonState,
+    session_id: &str,
+) -> usize {
     let manager = state.manager.lock().unwrap();
     let mut cancelled = 0;
     for run in manager

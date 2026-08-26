@@ -8,6 +8,7 @@
 
 mod activity;
 mod inflight;
+mod live_turns;
 mod logging;
 mod reply;
 mod scheduling;
@@ -48,8 +49,10 @@ use crate::config::{
 use crate::i18n::{text_for, Locale};
 use crate::ipc::ImageAttachment;
 use crate::paths::MiyuPaths;
+use crate::runtime::{
+    random_id, validate_content, ActorCommand, DaemonState, IpcRunGuard, RunInfo,
+};
 use crate::state::{PlatformSessionBindingKey, StateStore};
-use crate::runtime::{random_id, validate_content, ActorCommand, DaemonState, IpcRunGuard, RunInfo};
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -149,8 +152,15 @@ impl PlatformRuntime {
         self.session_turn_ticket(session_id, limits).acquire().await
     }
 
-    pub(crate) fn preempt_session_turns(&self, session_id: &str) -> SessionTurnTicket {
-        let mut ticket = self.session_turn_ticket(session_id, PlatformSessionLimits::default());
+    /// `limits` 只在这条会话尚无调度状态时生效(建状态用)。传解析后的值,
+    /// 别传 default——串行体制下用 default 建出来的状态带着 8 个并行位,
+    /// 后续回合会顺着它偷跑(08-26 会话内并行开关)。
+    pub(crate) fn preempt_session_turns(
+        &self,
+        session_id: &str,
+        limits: PlatformSessionLimits,
+    ) -> SessionTurnTicket {
+        let mut ticket = self.session_turn_ticket(session_id, limits);
         ticket.generation = ticket
             .state
             .generation
@@ -171,7 +181,37 @@ impl PlatformRuntime {
     }
 }
 
+/// 把一个 registry 收敛成平台回合该有的样子:非管理员会话换成受限底座,
+/// 管理员会话保留底座但摘掉 owner 专属工具、并把记忆工具作用域化到该会话。
+///
+/// 平台回合(turns/task.rs)与 MCP 桥(web/session_cmds.rs)两条路必须给出
+/// 同一套工具面——桥曾经直接发 owner 面全量 registry,非管理员群友经它就
+/// 能调 run_command 与 claude_code(08-26 审查)。收在这里,两边不再各写一遍。
+/// `restricted_base` 给调用方复用已建好的受限底座(回合路径每轮都要用,
+/// 现建一次不划算);传 None 就地建一个。
+pub(crate) fn apply_platform_turn_scope(
+    registry: &mut crate::tools::ToolRegistry,
+    config: &crate::config::AppConfig,
+    paths: &crate::paths::MiyuPaths,
+    context: &PlatformTurnContext,
+    restricted_base: Option<&crate::tools::ToolRegistry>,
+) {
+    if !context.host_tools_allowed() {
+        *registry = match restricted_base {
+            Some(base) => base.clone(),
+            None => crate::tools::restricted_platform_registry(config, paths),
+        };
+    } else {
+        crate::tools::rescope_platform_memory_tools(registry, config, paths, context, false);
+    }
+    // claude_code 只属于本机 owner 面(§09):订阅额度与本机代理权限不跟
+    // 平台身份走,管理员会话也一并摘掉。该委托工具 08-21 已删除,这行是它
+    // 万一回归时的常备闸——当下不生效,也无法被测试钉住。
+    registry.unregister("claude_code");
+}
+
 pub(crate) use assets::platform_asset;
+pub(crate) use live_turns::{live_turn_context, LiveTurnGuard};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
