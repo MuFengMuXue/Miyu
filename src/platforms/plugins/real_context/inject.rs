@@ -671,6 +671,9 @@ impl RealContextPlugin {
                 )
             })
             .unwrap_or_else(|_| formatted.images.clone());
+        // 同一份也挂到回合上下文上:MCP 桥(claude-code 供应商)另建工具面,
+        // 拿不到 PlatformTurnInput,只能从这里取(08-26)。
+        context.set_context_images(resolvable.clone());
         input.context_images = resolvable;
         input.context_files = formatted.files.clone();
         // Advance only on the messages actually rendered; a turn that showed

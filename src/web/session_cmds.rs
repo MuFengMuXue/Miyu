@@ -514,6 +514,28 @@ pub(in crate::web) fn attach_owner_turn_tools(
         if !config.platforms.qq.memory.write_enabled {
             registry.unregister("remember_fact");
         }
+        // 看图与生图的作用域也要在这条路上装一遍(08-26 用户点名"图我看不了")。
+        // 真实回合是在 agent/input.rs 准备输入时注册的,桥另建工具面走不到那
+        // 里:于是 claude-code 供应商拿到的工具面里根本没有 vision_analyze,
+        // 群上下文里的图只给了 id 却没有任何手段去看——Miyu 说看不了是实话。
+        //
+        // 顺带堵上同一处的另一个洞:受限底座注册的是**不受限**的
+        // generate_image,它的参考图解析器能吃宿主任意路径;
+        // register_scoped_platform 会用作用域版本把它换掉。非管理员的
+        // allow_general_access 为假,只认已入库的 context_image_N。
+        if config.tools.enabled
+            && (config.plugins.vision.enabled || config.plugins.image_generation.enabled)
+        {
+            let context_images = platform.context_images();
+            crate::tools::vision::register_scoped_platform(
+                registry,
+                config.clone(),
+                state.paths.clone(),
+                Vec::new(),
+                context_images,
+                platform.clone(),
+            );
+        }
         crate::platforms::register_platform_tools(registry, platform);
         return;
     }

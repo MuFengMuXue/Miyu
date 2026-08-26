@@ -890,3 +890,44 @@ fn tool_bridge_scopes_platform_tools_like_a_real_turn() {
     );
     assert!(!registry.contains("read_file"), "应采用调用方给的受限底座");
 }
+
+/// 桥的工具面必须带上作用域看图(08-26 用户"图我看不了")。真实回合是在
+/// `agent/input.rs` 准备输入时注册 `vision_analyze` 的,桥另建工具面走不到
+/// 那里——于是 claude-code 供应商拿到的面里根本没有它,群上下文里的图只给了
+/// id 却没有任何手段去看。顺带钉住同一处的越权口子:受限底座注册的
+/// `generate_image` 参考图解析器不受限,作用域版本必须把它换掉。
+#[test]
+fn platform_tool_face_carries_scoped_vision() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let mut config = AppConfig::default();
+    config.tools.enabled = true;
+    config.plugins.vision.enabled = true;
+
+    let (_temp2, guest, _adapter) = crate::platforms::tests::shared::test_turn_context(false);
+    let guest = std::sync::Arc::new(guest);
+    assert!(!guest.host_tools_allowed());
+    // 本轮群里有一张可看的图。
+    guest.set_context_images(vec![crate::platforms::PlatformContextImageRef {
+        id: "context_image_1".to_string(),
+        message_id: "m1".to_string(),
+        image_index: 1,
+    }]);
+
+    let mut registry = crate::tools::restricted_platform_registry(&config, &paths);
+    assert!(
+        !registry.contains("vision_analyze"),
+        "受限底座本来就没有看图工具——这正是病灶"
+    );
+    crate::tools::vision::register_scoped_platform(
+        &mut registry,
+        config.clone(),
+        paths.clone(),
+        Vec::new(),
+        guest.context_images(),
+        guest.clone(),
+    );
+    assert!(registry.contains("vision_analyze"), "桥的工具面必须能看图");
+    // 非管理员只认已入库的 context_image_N,拿不到宿主任意路径。
+    assert!(!guest.host_tools_allowed());
+}

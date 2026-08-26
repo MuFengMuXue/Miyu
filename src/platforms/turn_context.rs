@@ -66,6 +66,10 @@ pub(crate) struct PlatformTurnContext {
     /// 正在处理中登记的 RAII 守卫:context 掉落即注销(见 inflight 模块头)。
     pub(crate) inflight_guard: Option<crate::platforms::inflight::InflightGuard>,
     pub(crate) message_activity: Option<MessageActivityHandle>,
+    /// 本回合可看的上下文图片(群里最近若干条消息里的图)。真实回合把它交给
+    /// `vision::register_scoped_platform`;MCP 桥另建工具面时也要用同一份,
+    /// 否则 claude-code 供应商那边整条看图链路是空的(08-26)。
+    pub(crate) context_images: Mutex<Vec<PlatformContextImageRef>>,
     pub(crate) response_target: Mutex<Option<PendingResponseTarget>>,
     pub(crate) group_member_cache: Mutex<HashMap<String, PlatformGroupMember>>,
     pub(crate) plugin_values: Mutex<BTreeMap<String, Value>>,
@@ -108,6 +112,7 @@ impl PlatformTurnContext {
             inbound_event: None,
             inflight_guard: None,
             message_activity: None,
+            context_images: Mutex::new(Vec::new()),
             response_target: Mutex::new(None),
             group_member_cache: Mutex::new(HashMap::new()),
             plugin_values: Mutex::new(BTreeMap::new()),
@@ -159,6 +164,15 @@ impl PlatformTurnContext {
             account_id: self.conversation.account_id.clone(),
             user_id: self.sender_id.clone(),
         }
+    }
+
+    /// 登记本回合可看的上下文图片。插件算出来之后调一次,供 MCP 桥取用。
+    pub(crate) fn set_context_images(&self, images: Vec<PlatformContextImageRef>) {
+        *self.context_images.lock().unwrap() = images;
+    }
+
+    pub(crate) fn context_images(&self) -> Vec<PlatformContextImageRef> {
+        self.context_images.lock().unwrap().clone()
     }
 
     pub(crate) fn set_response_target(&self, target: Option<ResponseTarget>) {
