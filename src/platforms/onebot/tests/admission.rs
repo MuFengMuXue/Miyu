@@ -203,11 +203,16 @@ async fn same_conversation_messages_can_be_observed_in_parallel() {
     second.await.unwrap();
 }
 
-/// 会话内并行默认关闭(08-26):同一个群的第二条消息必须等第一条回合让出
-/// 席位才被观察到——并发回合各答各的正是跨线代答/重复答题的土壤。退回
-/// `session_limits_for` 的串行钳制,第二条会立刻被观察到,断言报红。
+/// 判断不受串行闸约束(08-26 用户要求)。会话内并行仍默认关闭——回复依旧一条
+/// 一条来、且按到达顺序(由 `platforms::tests::scheduling` 的顺序闸用例把关)
+/// ——但"要不要回"的判断必须并行:第一条还卡在观察/判断里时,第二条的判断就
+/// 该开跑了。
+///
+/// 这条用例原先断言的是反面(第二条必须等第一条让出席位),那正是线上那个
+/// 病灶:14:30:07 到达的消息 14:31:26 才判完,79 秒全花在等前一个回合整段
+/// 生成上,判断的 LLM 调用还被白白串进关键路径。
 #[tokio::test]
-async fn same_conversation_messages_serialize_when_parallelism_is_off() {
+async fn judgement_runs_in_parallel_even_when_replies_stay_serial() {
     let temp = tempfile::tempdir().unwrap();
     let state = test_web_state(temp.path(), 8300);
     {
@@ -269,24 +274,18 @@ async fn same_conversation_messages_serialize_when_parallelism_is_off() {
         event(2),
         next_ingress_order(),
     ));
-    // 第一条还占着席位:第二条必须卡在准入闸上。
-    assert!(
-        tokio::time::timeout(Duration::from_millis(80), observed_rx.recv())
-            .await
-            .is_err(),
-        "串行模式下第二条消息不应与第一条同时进入"
-    );
-
-    // 放行第一条,第二条随即被观察到——是排队而不是丢弃。
-    release_first.notify_one();
-    first.await.unwrap();
+    // 第一条仍卡在观察/判断里,第二条的判断必须已经开跑。把 acquire 挪回
+    // 判断之前,这里就会超时报红。
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(5), observed_rx.recv())
             .await
-            .unwrap()
+            .expect("判断应与第一条并行,不该等它让出席位")
             .as_deref(),
         Some("2")
     );
+
+    release_first.notify_one();
+    first.await.unwrap();
     release_first.notify_one();
     second.await.unwrap();
 }

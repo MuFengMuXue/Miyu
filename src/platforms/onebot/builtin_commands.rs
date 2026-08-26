@@ -195,7 +195,9 @@ pub(in crate::platforms::onebot) async fn execute_builtin_command(
                         .to_string()
                     }
                     Ok(session_id) => {
-                        let queued = state.platforms.queued_session_turns(&session_id);
+                        let queued = state
+                            .platforms
+                            .queued_turns(&context.conversation.scope_key());
                         let ticket = state.platforms.preempt_session_turns(
                             &session_id,
                             context.config.platforms.qq.session_limits(

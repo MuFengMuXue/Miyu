@@ -133,6 +133,38 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
     }
     apply_admission_text_model_pool(&mut app_config, target, &admission);
 
+    // 到达顺序位要在这里拿——**赶在任何网络往返之前**。往下依次是展开合并
+    // 转发、查群名、查被 @ 的人、取被引用消息四个请求,再往后才查得出
+    // session id;等到那时候登记,两条消息谁先排上已经由这几个请求的快慢
+    // 决定了(08-26 二轮审查)。序号用 ingress_order:连接层单线程递增,严格
+    // 等于到达顺序。
+    let session_limits = app_config.platforms.qq.session_limits(
+        match target {
+            Target::Private { .. } => PlatformConversationKind::Private,
+            Target::Group { .. } => PlatformConversationKind::Group,
+        },
+        &target.conversation_id().to_string(),
+    );
+    let conversation_scope = platform_conversation(target, self_id).scope_key();
+    let Some(order_slot) = state.platforms.turn_order.enter(
+        &conversation_scope,
+        ingress_order,
+        session_limits.running.saturating_add(session_limits.queued),
+    ) else {
+        // 积压已满。丢弃提前到这里,连解析和展开转发都省了。
+        tracing::debug!(
+            target: "miyu::qq",
+            sender_id = user_id,
+            conversation_id = target.conversation_id(),
+            "{}",
+            t(
+                "OneBot message discarded: the conversation queue is full",
+                "OneBot 消息已丢弃：当前会话等待队列已满"
+            )
+        );
+        return;
+    };
+
     let mut parsed = parse_message(event.get("message"), event.get("raw_message"), self_id);
     if let Some(reason) = parsed.rejected_reason {
         tracing::warn!(
@@ -494,51 +526,16 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
             }
         }
     }
-    let session_limits = context.config.platforms.qq.session_limits(
-        match target {
-            Target::Private { .. } => PlatformConversationKind::Private,
-            Target::Group { .. } => PlatformConversationKind::Group,
-        },
-        &target.conversation_id().to_string(),
-    );
+    // 票据在**判断之前**建好:它快照 generation,判断期间发生的覆盖要能让这
+    // 张票失效。真正阻塞的 `acquire()` 挪到判断之后——否则串行体制下,一条
+    // 消息要等前一个回合整段生成跑完才轮到被"要不要回"地评估,判断的 LLM
+    // 调用也被串进了关键路径(08-26 实录:14:30:07 到达的消息 14:31:26 才判
+    // 完,79 秒全在排队)。顺序位在派发链最前面就拿到了,这里只是转交保管。
     let session_turn_ticket = session_id.as_deref().map(|session_id| {
         state
             .platforms
-            .session_turn_ticket(session_id, session_limits)
+            .session_turn_ticket_in_order(session_id, session_limits, order_slot)
     });
-    let session_turn = match session_turn_ticket {
-        Some(ticket) => match ticket.acquire().await {
-            Ok(lease) => Some(lease),
-            // Dropped in silence. Announcing a full queue told the group
-            // nothing it could act on — the backlog clears on its own — and
-            // the apology itself cost a message at the exact moment the
-            // conversation was already saturated. The log keeps it visible to
-            // whoever runs the bot.
-            Err(crate::platforms::SessionTurnAcquireError::Full) => {
-                tracing::debug!(
-                    target: "miyu::qq",
-                    session_id = ?session_id,
-                    sender_id = user_id,
-                    message_id = %inbound_event.message_id,
-                    "{}",
-                    t(
-                        "OneBot message discarded: the conversation queue is full",
-                        "OneBot 消息已丢弃：当前会话等待队列已满"
-                    )
-                );
-                return;
-            }
-            Err(crate::platforms::SessionTurnAcquireError::Closed) => return,
-        },
-        None => None,
-    };
-    if session_turn
-        .as_ref()
-        .is_some_and(|session_turn| !session_turn.is_valid())
-    {
-        context.after_turn_aborted().await;
-        return;
-    }
     let message_id = inbound_event.message_id.clone();
     if plugin_command_response.is_none() && builtin_command.is_none() {
         let trigger_content = core_trigger_content;
@@ -562,10 +559,44 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
         context.observe_inbound(&inbound_event).await;
         context.decide_trigger(&inbound_event, &mut trigger).await;
         if !trigger.should_reply {
+            // 票据连同顺序位在这里掉落,后面的消息立刻可以排上。
             return;
         }
         parsed.text = trigger.content;
         context.set_response_target(trigger.response_target);
+    }
+    let session_turn = match session_turn_ticket {
+        Some(ticket) => match ticket.acquire().await {
+            Ok(lease) => Some(lease),
+            // Dropped in silence. Announcing a full queue told the group
+            // nothing it could act on — the backlog clears on its own — and
+            // the apology itself cost a message at the exact moment the
+            // conversation was already saturated. The log keeps it visible to
+            // whoever runs the bot.
+            Err(crate::platforms::SessionTurnAcquireError::Full) => {
+                tracing::debug!(
+                    target: "miyu::qq",
+                    session_id = ?session_id,
+                    sender_id = user_id,
+                    message_id = %message_id,
+                    "{}",
+                    t(
+                        "OneBot message discarded: the conversation queue is full",
+                        "OneBot 消息已丢弃：当前会话等待队列已满"
+                    )
+                );
+                return;
+            }
+            Err(crate::platforms::SessionTurnAcquireError::Closed) => return,
+        },
+        None => None,
+    };
+    if session_turn
+        .as_ref()
+        .is_some_and(|session_turn| !session_turn.is_valid())
+    {
+        context.after_turn_aborted().await;
+        return;
     }
 
     tracing::info!(

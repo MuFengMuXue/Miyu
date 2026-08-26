@@ -13,12 +13,14 @@ mod logging;
 mod reply;
 mod scheduling;
 mod turn_context;
+mod turn_order;
 mod turn_run;
 pub(crate) use activity::*;
 pub(crate) use logging::*;
 pub(crate) use reply::*;
 pub(crate) use scheduling::*;
 pub(crate) use turn_context::*;
+pub(crate) use turn_order::*;
 pub(crate) use turn_run::*;
 mod access_control;
 mod assets;
@@ -76,6 +78,9 @@ pub(crate) struct PlatformRuntime {
     pub(crate) file_store_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) message_activity: MessageActivityRegistry,
     session_turn_locks: Arc<Mutex<HashMap<String, Weak<SessionTurnState>>>>,
+    /// 到达顺序闸,按会话标识分表(见 `turn_order`)。与 session 锁分开,是
+    /// 因为它要在 session id 查出来之前就登记。
+    pub(crate) turn_order: TurnOrderRegistry,
 }
 
 impl PlatformRuntime {
@@ -91,6 +96,7 @@ impl PlatformRuntime {
             file_store_lock: Arc::new(tokio::sync::Mutex::new(())),
             message_activity: MessageActivityRegistry::default(),
             session_turn_locks: Arc::new(Mutex::new(HashMap::new())),
+            turn_order: TurnOrderRegistry::default(),
         })
     }
 
@@ -141,7 +147,24 @@ impl PlatformRuntime {
             state,
             states: self.session_turn_locks.clone(),
             exclusive: false,
+            order_slot: None,
         }
+    }
+
+    /// 用一个**已登记的**到达顺序位建票。顺序位在派发链最前面就拿到手
+    /// (`turn_order.enter`),这里只是把它交给票据保管。
+    ///
+    /// 票据本身**必须在主动回复判断之前建**:它快照 generation,判断期间发生
+    /// 的覆盖要能让这张票失效。真正阻塞的是随后的 `acquire()`。
+    pub(crate) fn session_turn_ticket_in_order(
+        &self,
+        session_id: &str,
+        limits: PlatformSessionLimits,
+        order_slot: TurnOrderSlot,
+    ) -> SessionTurnTicket {
+        let mut ticket = self.session_turn_ticket(session_id, limits);
+        ticket.order_slot = Some(order_slot);
+        ticket
     }
 
     async fn acquire_session_turn(
@@ -171,13 +194,11 @@ impl PlatformRuntime {
         ticket
     }
 
-    pub(crate) fn queued_session_turns(&self, session_id: &str) -> usize {
-        let locks = self.session_turn_locks.lock().unwrap();
-        locks
-            .get(session_id)
-            .and_then(Weak::upgrade)
-            .map(|state| state.waiting.load(Ordering::Acquire))
-            .unwrap_or(0)
+    /// 这条会话上还压着多少回合。取顺序闸的登记数而不是 `waiting`:判断挪到
+    /// 抢名额之前以后,同一时刻最多只有一条卡在信号量上,`waiting` 恒 0 或 1,
+    /// 拿它报数会让 `/stop` 把八条积压说成一条(08-26 二轮审查)。
+    pub(crate) fn queued_turns(&self, conversation_scope: &str) -> usize {
+        self.turn_order.backlog(conversation_scope)
     }
 }
 
