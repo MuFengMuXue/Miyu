@@ -11,6 +11,48 @@ fn artifact_tools_are_scoped_to_local_webui_requests() {
     assert!(!is_local_webui_request(PromptAudience::External, true));
 }
 
+/// 清空 token 统计明细:删的是 usage-history.jsonl,累计正账 usage.json
+/// 必须留着(它是"一生用了多少"的唯一记录)。08-26 新增按钮的后端契约。
+#[test]
+fn clearing_usage_history_keeps_the_cumulative_ledger() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = test_paths(temp.path());
+    let store = crate::state::StateStore::new(&paths).unwrap();
+    store.init_files().unwrap();
+    let usage = crate::llm::Usage {
+        prompt_tokens: 1_000,
+        completion_tokens: 100,
+        total_tokens: 1_100,
+        ..crate::llm::Usage::default()
+    };
+    store
+        .add_auxiliary_usage(
+            &usage,
+            crate::state::UsageMeta {
+                source: "agent",
+                provider: Some("p"),
+                model: Some("m"),
+                kind: None,
+            },
+        )
+        .unwrap();
+    assert!(store.usage_history_file().exists());
+    let before = store.usage_snapshot().unwrap().total_tokens;
+    assert!(before > 0, "累计账应已记上");
+
+    store.clear_usage_history().unwrap();
+    assert!(!store.usage_history_file().exists(), "明细应被清空");
+    assert_eq!(
+        store.usage_snapshot().unwrap().total_tokens,
+        before,
+        "累计正账不得被清"
+    );
+    let stats = store
+        .usage_stats(crate::state::UsageRange::All, None)
+        .unwrap();
+    assert_eq!(stats.totals.requests, 0, "统计页数据应归零");
+}
+
 #[tokio::test]
 async fn persona_asset_store_is_atomic_and_rejects_corrupt_cache_entries() {
     let temp = tempfile::tempdir().unwrap();

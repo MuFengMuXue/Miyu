@@ -6813,6 +6813,9 @@ body[data-theme="linen"] .u-type-pill.t-aux { color: var(--md-sys-color-on-secon
 .u-rec-filters select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* CSP style-src 'self' 拦 HTML 解析期的内联样式:静态标注一律走 class。 */
 .u-refresh { align-self: center; margin-left: -6px; }
+/* 清空排在刷新右边;危险动作用弱化底色,悬停才显红。 */
+.u-clear { align-self: center; margin-left: -2px; color: var(--text-faint); }
+.u-clear:hover { color: var(--danger, #c0392b); }
 .u-heat-days span:nth-child(1) { grid-row: 1; }
 .u-heat-days span:nth-child(2) { grid-row: 3; }
 .u-heat-days span:nth-child(3) { grid-row: 5; }

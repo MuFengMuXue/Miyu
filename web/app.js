@@ -211,6 +211,7 @@
     usageSources: document.getElementById("usageSources"),
     usageRecords: document.getElementById("usageRecords"),
     usageRefresh: document.getElementById("usageRefresh"),
+    usageClear: document.getElementById("usageClear"),
     usageSrcFilter: document.getElementById("usageSrcFilter"),
     usageModelFilter: document.getElementById("usageModelFilter"),
     sidebarThemeButton: document.getElementById("sidebarThemeButton"),
@@ -10464,6 +10465,25 @@
       updateChartColors();
       loadUsageStats();
       loadUsageRecords();
+    });
+    elements.usageClear.addEventListener("click", async () => {
+      // 本页(卡片/热力/每日/模型明细/最近调用)全部派生自 usage-history.jsonl,
+      // 删它就是清空整页;usage.json 只喂聊天界面的会话累计,不在本页上。
+      if (!window.confirm("清空数据统计？\n\n本页所有数据（总消耗、热力图、每日 token、模型明细、最近调用）都会归零，且不可恢复。")) {
+        return;
+      }
+      elements.usageClear.disabled = true;
+      try {
+        await apiRequest("/api/usage/clear", { method: "POST" });
+        usageState.kindFilters.clear();
+        usageState.platformTab = null;
+        loadUsageStats();
+        loadUsageRecords();
+      } catch (error) {
+        elements.usageStamp.textContent = `清空失败:${error.message || error}`;
+      } finally {
+        elements.usageClear.disabled = false;
+      }
     });
     elements.usageSrcFilter.addEventListener("change", () => loadUsageRecords());
     elements.usageModelFilter.addEventListener("change", () => loadUsageRecords());
