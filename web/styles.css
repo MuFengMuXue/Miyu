@@ -539,6 +539,13 @@ textarea:disabled {
   gap: 6px;
 }
 
+/* 会话名的字重定在 `.session-copy strong`(见下方);当前会话用中等字重
+   区分——特异性要压过那条,否则被同特异性、位置更靠后的规则盖掉
+   (08-26 实录:先在这里写 400 没生效,就是被后面那条 600 覆盖了)。 */
+.session-item.active .session-copy strong {
+  font-weight: 600;
+}
+
 .session-default-badge {
   flex: 0 0 auto;
   padding: 0 5px;
@@ -611,7 +618,8 @@ body[data-theme="graphite"] .session-unread-dot {
 
 .session-copy strong {
   font-size: 12.5px;
-  font-weight: 600;
+  /* 语义上是 <strong>,视觉上不该整列粗体:层次交给背景与当前项的 600。 */
+  font-weight: 400;
 }
 
 .session-copy small,
@@ -6716,13 +6724,31 @@ body[data-theme="linen"] {
   font-variant-numeric: tabular-nums; }
 .u-chart-tip .row i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 
-.u-model-body { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
-.u-donut-wrap { position: relative; width: 188px; height: 188px; flex: none; margin-inline: 6px; }
+.u-model-body { display: flex; align-items: flex-start; gap: 26px; flex-wrap: wrap; }
+/* 来源内细项条(主动回复判断等):整行占满,排在环形图与表格之下。 */
+.u-kind-strip { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.u-kind-item { display: inline-flex; align-items: baseline; gap: 10px; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+  font-size: 12px; color: var(--text-faint); }
+.u-kind-item b { font-weight: 600; color: var(--text); }
+.u-kind-item em { font-style: normal; font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums; }
+/* 模型表里的细项行:同模型同色,空心点+徽章表明用途不同。 */
+.u-dot-kind { position: relative; opacity: .5; }
+.u-kind-tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 10px; font-weight: 500;
+  color: var(--text-faint); vertical-align: 1px; }
+/* 环形图固定在卡片左上:模型行数一变,居中对齐会让整个环上下漂(08-26
+   用户点名切标签页时饼图位置乱跳)。 */
+.u-donut-wrap { position: relative; width: 188px; height: 188px; flex: none;
+  margin-inline: 6px; align-self: flex-start; margin-top: 6px; }
 .u-donut-wrap svg { width: 100%; height: 100%; display: block; }
 .u-donut-wrap circle { transition: stroke-width .12s; }
 .u-donut-center { position: absolute; inset: 0; display: grid; place-items: center;
   text-align: center; pointer-events: none; }
 .u-donut-center b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.u-donut-center .u-donut-sub { display: block; margin-top: 2px; font-size: 11px;
+  color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .u-donut-center small { color: var(--text-soft); font-size: var(--fs-micro); }
 .u-table-scroll { overflow-x: auto; flex: 1; min-width: 340px; }
 .u-table { width: 100%; border-collapse: collapse; font-size: var(--fs-ui); }
@@ -6751,6 +6777,9 @@ body[data-theme="linen"] {
 .u-type-pill { font-size: var(--fs-micro); padding: 1px 9px; border-radius: 999px; }
 .u-type-pill.t-chat { background: var(--surface-2); color: var(--text-soft); }
 .u-type-pill.t-aux { background: var(--gold-soft); color: var(--gold); }
+/* 细项(主动回复判断等)与普通辅助调用区分:同一栏里"判断"要一眼可辨。 */
+.u-type-pill.t-kind { background: var(--accent-soft);
+  color: var(--md-sys-color-on-primary-container); }
 body[data-theme="linen"] .u-type-pill.t-aux { color: var(--md-sys-color-on-secondary-container); }
 .u-src-pill { font-size: var(--fs-micro); padding: 1px 8px; border-radius: 999px;
   background: var(--surface-2); color: var(--text-soft); }

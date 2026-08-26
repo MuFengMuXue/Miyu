@@ -9679,6 +9679,9 @@
     stats: null,
     loadSeq: 0,
     platformTab: null,
+    // 用途筛选:按来源分桶(src → all|main|<kind>)。全局一个值时,选中某个
+    // 细项会把没有该细项的另一张卡清空(08-26 审查)。
+    kindFilters: new Map(),
     modelColors: new Map(),
   };
   const USAGE_COLOR_VARS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-4)", "var(--chart-3)"];
@@ -9710,6 +9713,7 @@
   }
 
   function usageFmt(value) {
+    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
     if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
     if (value >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
     return String(value);
@@ -9718,6 +9722,22 @@
     if (src === "agent") return "智能体";
     if (src === "qq" || src === "onebot") return "QQ";
     return src;
+  }
+
+  // 来源内细项(后端 kinds):已含在来源合计里,只是拆出来看得见。
+  function usageKindName(kind) {
+    if (kind === "judge") return "主动回复判断";
+    if (kind === "affection") return "好感度更新";
+    if (kind === "group_join") return "入群审批";
+    return kind;
+  }
+
+  // 明细表列窄,用短名;没有短名就退回全名。
+  function usageKindShortName(kind) {
+    if (kind === "judge") return "判断";
+    if (kind === "affection") return "好感度";
+    if (kind === "group_join") return "入群";
+    return usageKindName(kind);
   }
 
   /* ── 图表色派生:跟随当前主题(含 matugen /theme.css 覆盖)──
@@ -10177,6 +10197,30 @@
       }
       head.appendChild(seg);
     }
+    const filterKinds = (source.kinds || []).filter((kind) => Number(kind.total || 0) > 0);
+    if (filterKinds.length) {
+      const seg = document.createElement("div");
+      seg.className = "con-segmented";
+      seg.style.marginLeft = platformTabs && platformTabs.length ? "8px" : "auto";
+      const active = usageState.kindFilters.get(source.src) || "all";
+      const choices = [["all", "全部"], ["main", "其它"]];
+      for (const kind of filterKinds) choices.push([kind.kind, usageKindName(kind.kind)]);
+      for (const [value, label] of choices) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.title = value === "main"
+          ? "未标注用途的调用:主线回复,以及好感度、入群审批等尚未打标的辅助调用"
+          : label;
+        button.classList.toggle("on", active === value);
+        button.addEventListener("click", () => {
+          usageState.kindFilters.set(source.src, value);
+          renderUsageSources(usageState.stats);
+        });
+        seg.appendChild(button);
+      }
+      head.appendChild(seg);
+    }
     card.appendChild(head);
 
     const body = document.createElement("div");
@@ -10205,12 +10249,73 @@
     body.appendChild(scroll);
     card.appendChild(body);
 
-    const aggregate = source;
-    const models = source.models || [];
+    // 细项(主动回复判断等)摊进饼图与模型表:每个模型先扣掉细项占用的部分
+    // 作为"主线",细项再各自成段——细项只当页脚摆着就看不出它吃掉了多少。
+    const kinds = (source.kinds || []).filter((kind) => Number(kind.total || 0) > 0);
+    const kindShare = new Map();
+    for (const kind of kinds) {
+      for (const model of kind.models || []) {
+        const key = `${model.provider}\u0000${model.model}`;
+        const prev = kindShare.get(key) || { total: 0, requests: 0, prompt: 0, completion: 0, cost: 0, cache_read: 0 };
+        kindShare.set(key, {
+          total: prev.total + Number(model.total || 0),
+          requests: prev.requests + Number(model.requests || 0),
+          prompt: prev.prompt + Number(model.prompt || 0),
+          completion: prev.completion + Number(model.completion || 0),
+          cache_read: prev.cache_read + Number(model.cache_read || 0),
+          cost: prev.cost + Number(model.cost || 0),
+        });
+      }
+    }
+    const models = [];
+    for (const model of source.models || []) {
+      const taken = kindShare.get(`${model.provider}\u0000${model.model}`);
+      if (!taken) {
+        models.push(model);
+        continue;
+      }
+      const rest = {
+        ...model,
+        total: Number(model.total || 0) - taken.total,
+        requests: Number(model.requests || 0) - taken.requests,
+        prompt: Number(model.prompt || 0) - taken.prompt,
+        completion: Number(model.completion || 0) - taken.completion,
+        cache_read: Number(model.cache_read || 0) - taken.cache_read,
+        cost: Number(model.cost || 0) - taken.cost,
+      };
+      if (rest.total > 0 || rest.requests > 0) models.push(rest);
+    }
+    for (const kind of kinds) {
+      for (const model of kind.models || []) {
+        if (!Number(model.total || 0)) continue;
+        models.push({ ...model, kindId: kind.kind, kindLabel: usageKindName(kind.kind) });
+      }
+    }
+    models.sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+    // 筛选只在有细项的卡上生效;合计随筛选重算,否则占比会拿全量当分母。
+    const filter = filterKinds.length
+      ? usageState.kindFilters.get(source.src) || "all"
+      : "all";
+    const visible = models.filter((model) => {
+      if (filter === "all") return true;
+      if (filter === "main") return !model.kindLabel;
+      return model.kindId === filter;
+    });
+    const aggregate = filter === "all"
+      ? source
+      : visible.reduce((sum, model) => ({
+          requests: sum.requests + Number(model.requests || 0),
+          prompt: sum.prompt + Number(model.prompt || 0),
+          completion: sum.completion + Number(model.completion || 0),
+          cache_read: sum.cache_read + Number(model.cache_read || 0),
+          total: sum.total + Number(model.total || 0),
+          cost: sum.cost + Number(model.cost || 0),
+        }), { requests: 0, prompt: 0, completion: 0, cache_read: 0, total: 0, cost: 0 });
     const requests = Number(aggregate.requests || 0);
-    const defCenter = `<div><b>${requests.toLocaleString()}</b><small>次请求</small></div>`;
+    const defCenter = `<div><b>${usageFmt(aggregate.total || 0)}</b><small>token 合计</small>
+      <span class="u-donut-sub">${requests.toLocaleString()} 次请求</span></div>`;
     center.innerHTML = defCenter;
-    if (!models.length || !aggregate.total) {
+    if (!visible.length || !aggregate.total) {
       tbody.innerHTML = `<tr><td colspan="7"><div class="u-empty">暂无记录</div></td></tr>`;
       return card;
     }
@@ -10231,16 +10336,23 @@
     const CIRCUM = 2 * Math.PI * RADIUS;
     // 单段就是完整圆环;分段间隙只在真的有多段时存在,且不超过最小段
     // 的一半,防止小切片被间隙吃掉。
-    const minShare = Math.min(...models.map((model) => model.total / aggregate.total));
-    const GAP = models.length > 1 ? Math.min(3, Math.max(0.5, (minShare * CIRCUM) / 2)) : 0;
+    const minShare = Math.min(...visible.map((model) => model.total / aggregate.total));
+    const GAP = visible.length > 1 ? Math.min(3, Math.max(0.5, (minShare * CIRCUM) / 2)) : 0;
     let accumulated = 0;
-    models.forEach((model, index) => {
+    visible.forEach((model, index) => {
       const share = model.total / aggregate.total;
-      const modelName = model.model || "(未标模型)";
+      const baseName = model.model || "(未标模型)";
+      const modelName = model.kindLabel ? `${baseName} · ${model.kindLabel}` : baseName;
       const color = usageModelColor(model.provider, model.model);
       const hit = usageCacheRate(model.cache_read || 0, model.prompt || 0);
       const row = document.createElement("tr");
-      row.innerHTML = `<td class="u-model-name"><b><i class="u-dot" style="background:${color}"></i>${modelName}</b>
+      // 细项行:同模型同色(全页同色规则),用虚线点与徽章区分用途。
+      const dot = model.kindLabel
+        ? `<i class="u-dot u-dot-kind" style="background:${color}"></i>`
+        : `<i class="u-dot" style="background:${color}"></i>`;
+      row.innerHTML = `<td class="u-model-name"><b>${dot}${baseName}${
+          model.kindLabel ? `<span class="u-kind-tag">${model.kindLabel}</span>` : ""
+        }</b>
           <small><i class="u-dot" style="visibility:hidden"></i>${model.provider || "—"}</small></td>
         <td class="num">${Math.round(share * 100)}%</td>
         <td class="num">${model.requests}</td>
@@ -10258,6 +10370,7 @@
       circle.setAttribute("fill", "none");
       circle.setAttribute("stroke", color);
       circle.setAttribute("stroke-width", "18");
+      if (model.kindLabel) circle.setAttribute("stroke-opacity", "0.5");
       circle.setAttribute("stroke-dasharray", `${length.toFixed(2)} ${(CIRCUM - length).toFixed(2)}`);
       circle.setAttribute("stroke-dashoffset", `${(-(accumulated * CIRCUM + GAP / 2)).toFixed(2)}`);
       circle.setAttribute("transform", "rotate(-90 60 60)");
@@ -10324,7 +10437,9 @@
         <td class="num">${usageFmt(record.completion || 0)}</td>
         <td class="num">${usageFmtCost(record.cost) ? `≈${usageFmtCost(record.cost)}` : "—"}</td>
         <td>${hit == null ? "—" : `<span class="u-cache-pill">${hit}%</span>`}</td>
-        <td><span class="u-type-pill ${record.aux ? "t-aux" : "t-chat"}">${record.aux ? "辅助" : "对话"}</span></td>`;
+        <td><span class="u-type-pill ${record.kind ? "t-kind" : record.aux ? "t-aux" : "t-chat"}">${
+          record.kind ? usageKindShortName(record.kind) : record.aux ? "辅助" : "对话"
+        }</span></td>`;
       tbody.appendChild(row);
     }
   }
