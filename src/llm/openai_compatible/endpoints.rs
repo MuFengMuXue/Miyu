@@ -284,13 +284,46 @@ pub(in crate::llm::openai_compatible) fn endpoint_client(
     Ok(client)
 }
 
+/// 配了活跃模型却一个都解析不动时,逐条说明原因。
+///
+/// `active_provider_model_choices` 把解析不动的条目**静默筛掉**,于是
+/// `llm_endpoints` 的循环一次都不进,报错尾巴是空的:
+/// "no active provider/model endpoint is configured:\n- "。用户和排查者都
+/// 看不出发生了什么(08-28 实录:会话模型覆盖指向已从供应商移除的模型)。
+fn stale_active_model_reasons(config: &AppConfig) -> Vec<String> {
+    config
+        .active_provider_models
+        .iter()
+        .flatten()
+        .map(|active| {
+            let provider_id = active.provider_id.trim();
+            let model = active.model.trim();
+            let reason = match config.provider(Some(provider_id)) {
+                Err(_) => t(
+                    "provider not found in the configuration",
+                    "配置里找不到这个供应商",
+                ),
+                Ok(_) => t(
+                    "the provider no longer lists this model (a session model override may point at a removed model)",
+                    "该模型已不在供应商的模型列表里(会话模型覆盖可能指向了已删除的模型)",
+                ),
+            };
+            format!("{provider_id} / {model}: {reason}")
+        })
+        .collect()
+}
+
 pub(in crate::llm::openai_compatible) fn llm_endpoints(
     config: &AppConfig,
     paths: &MiyuPaths,
 ) -> Result<Vec<LlmEndpoint>> {
     let mut endpoints = Vec::new();
     let mut errors = Vec::new();
-    for choice in config.active_provider_model_choices() {
+    let choices = config.active_provider_model_choices();
+    if choices.is_empty() {
+        errors.extend(stale_active_model_reasons(config));
+    }
+    for choice in choices {
         let mut provider = config.provider(Some(&choice.provider_id))?.clone();
         if !provider.enabled {
             errors.push(format!(
@@ -419,5 +452,41 @@ mod cooldown_tests {
             scheduler.mark_failure("e".into(), Duration::from_secs(120)),
             Duration::from_secs(240)
         );
+    }
+
+    /// 活跃模型全都解析不动时,报错必须说清是**哪一条、为什么**。
+    ///
+    /// 08-28 实录:会话覆盖指向已从供应商移除的模型,选项被静默筛掉,报错尾巴
+    /// 是空的——"no active provider/model endpoint is configured:\n- "。
+    #[test]
+    fn stale_active_models_explain_themselves() {
+        let mut config = crate::config::AppConfig::default();
+        let provider_id = config.providers[0].id.clone();
+        config.providers[0].models = vec!["kept".to_string()];
+        config.providers[0].default_model = "kept".to_string();
+        config.active_provider_models = Some(vec![
+            crate::config::ActiveProviderModelConfig {
+                provider_id: provider_id.clone(),
+                model: "removed-model".to_string(),
+            },
+            crate::config::ActiveProviderModelConfig {
+                provider_id: "no-such-provider".to_string(),
+                model: "whatever".to_string(),
+            },
+        ]);
+
+        assert!(config.active_provider_model_choices().is_empty());
+        let reasons = stale_active_model_reasons(&config);
+        assert_eq!(reasons.len(), 2, "两条都要有说法:{reasons:?}");
+        assert!(
+            reasons[0].contains("removed-model"),
+            "要点名模型:{reasons:?}"
+        );
+        assert!(
+            reasons[1].contains("no-such-provider"),
+            "供应商缺失也要点名:{reasons:?}"
+        );
+        // 报错尾巴不再是空的。
+        assert!(reasons.iter().all(|reason| reason.contains(": ")));
     }
 }
