@@ -37,12 +37,12 @@ pub fn register(
     }
     registry.register(ToolSpec::new(
         "vision_analyze",
-        "Analyze an image using the current multimodal model or a configured vision provider. Supports local image paths and http(s) image URLs.",
+        "Analyze an image or a video using the current multimodal model or a configured vision provider. Supports local paths and http(s) URLs. Video formats: mp4, mkv, mov, webm, mpeg; a URL costs far less than a local file, which has to be inlined as base64.",
         json!({
             "type": "object",
             "properties": {
-                "image": { "type": "string", "description": "Local image path or http(s) image URL." },
-                "images": { "type": "array", "items": { "type": "string" }, "description": "Several images to analyze in one call (paths or URLs). Overrides image." },
+                "image": { "type": "string", "description": "Local path or http(s) URL of an image or a video." },
+                "images": { "type": "array", "items": { "type": "string" }, "description": "Several images to analyze in one call (paths or URLs). Overrides image. Videos are analyzed one at a time — pass a single video through `image`." },
                 "prompt": { "type": "string", "description": "Question or instruction for image analysis. Defaults to a concise description." }
             },
             "required": [],
@@ -342,7 +342,7 @@ async fn analyze_image_one(args: Value, config: AppConfig, paths: MiyuPaths) -> 
 }
 
 /// 按扩展名识别视频并给出 mime;None=按图片处理。
-fn video_mime(value: &str) -> Option<&'static str> {
+pub(crate) fn video_mime(value: &str) -> Option<&'static str> {
     let lower = value
         .split('?')
         .next()
@@ -351,6 +351,9 @@ fn video_mime(value: &str) -> Option<&'static str> {
     let ext = lower.rsplit('.').next()?;
     Some(match ext {
         "mp4" | "m4v" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        // GLM 官方列的三种格式是 mp4 / mkv / mov;mkv 原先不在表里,会被当图片
+        // 走(08-27)。mpeg / webm 保留:别的中转吃这些,GLM 自己会退回明确错误。
         "mpeg" | "mpg" => "video/mpeg",
         "mov" => "video/mov",
         "webm" => "video/webm",
@@ -358,11 +361,16 @@ fn video_mime(value: &str) -> Option<&'static str> {
     })
 }
 
-/// base64 后约 +33%,再叠请求 JSON 外壳——24MB 原始体积是中转普遍能扛的
-/// 安全线;超了指引裁剪而不是静默截断。
-const MAX_VIDEO_BYTES: u64 = 24 * 1024 * 1024;
+/// 视频体积上限,对齐 GLM 官方规格(08-27:GLM-5V-Turbo / 4.6V / 4.5V 及其他
+/// 多模态模型 200MB;GLM-4V-Plus 另有 20MB 且 ≤30 秒的更紧限制,由服务端自己
+/// 回错)。原先卡在 24MB,是按"base64 过中转"定的保守线,把 GLM 能吃的量挡在
+/// 门外。
+///
+/// 本地文件要 base64,体积会 +33% 再叠请求 JSON 外壳;超大文件走 URL 更划算
+/// ——官方文档也推荐 URL。超限时指引裁剪而不是静默截断。
+const MAX_VIDEO_BYTES: u64 = 200 * 1024 * 1024;
 
-fn local_video_data_url(value: &str, mime: &str) -> Result<String> {
+pub(crate) fn local_video_data_url(value: &str, mime: &str) -> Result<String> {
     let path = expand_path(value);
     let metadata = std::fs::metadata(&path)
         .with_context(|| format!("failed to stat video {}", path.display()))?;
@@ -447,8 +455,11 @@ fn video_client(config: &AppConfig, paths: &MiyuPaths) -> Result<OpenAiCompatibl
         return OpenAiCompatibleClient::from_choices(config, paths, &choices)
             .map(|client| client.with_request_scope("vision"));
     }
+    // 两条路都要写出来。原先只指了 video_provider_id 那条,而更自然的做法是把
+    // 支持视频的模型选进多模态池——用户按提示去翻 vision 配置,查了一圈才发现
+    // 池子根本是空的(08-27)。
     bail!(
-        "no video-capable model available: set plugins.vision.video_provider_id/video_model to a model with video input (e.g. ox-alpha-free on an OpenRouter-compatible relay)"
+        "no video-capable model available: either add a model whose input modalities include \"video\" to the active multimodal model pool (miyu config → 配置多模态模型), or set plugins.vision.video_provider_id/video_model to one (e.g. glm-5.3-flash, or ox-alpha-free on an OpenRouter-compatible relay)"
     )
 }
 
@@ -730,9 +741,24 @@ mod video_route_tests {
         );
         assert_eq!(video_mime("/tmp/a.png"), None);
         assert_eq!(video_mime("https://x.com/v"), None);
+        // GLM 官方列的三种格式必须全认(08-27:mkv 原先漏了,会被当图片走)。
+        for (path, mime) in [
+            ("/tmp/a.mp4", "video/mp4"),
+            ("/tmp/a.mkv", "video/x-matroska"),
+            ("/tmp/a.mov", "video/mov"),
+        ] {
+            assert_eq!(video_mime(path), Some(mime), "GLM 支持的格式: {path}");
+        }
     }
 
-    /// wire 形态锁定:OpenRouter/Qwen 系约定 {"type":"video_url","video_url":{"url":…}}。
+    /// 体积上限对齐 GLM 官方规格(200MB);卡在旧的 24MB 会把 GLM 能吃的量挡住。
+    #[test]
+    fn video_size_cap_matches_the_glm_limit() {
+        assert_eq!(MAX_VIDEO_BYTES, 200 * 1024 * 1024);
+    }
+
+    /// wire 形态锁定:GLM 官方文档与 OpenRouter/Qwen 系一致,都是
+    /// {"type":"video_url","video_url":{"url":…}}(08-27 对过官方 API 文档)。
     #[test]
     fn video_part_serializes_to_openrouter_shape() {
         let message =

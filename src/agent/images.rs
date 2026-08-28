@@ -145,6 +145,18 @@ pub(in crate::agent) fn active_text_pool_supports_vision(config: &AppConfig) -> 
         })
 }
 
+/// 活跃文本池能不能直接吃视频。
+///
+/// 与 `active_text_pool_supports_vision` 同构:要**池里每个模型**都支持,否则
+/// 轮到不支持的那个就会带着一段它读不懂的内容块发过去。
+pub(in crate::agent) fn active_text_pool_supports_video(config: &AppConfig) -> bool {
+    let choices = config.active_provider_model_choices();
+    !choices.is_empty()
+        && choices.iter().all(|choice| {
+            config.model_supports_any_input(&choice.provider_id, &choice.model, &["video"])
+        })
+}
+
 pub(in crate::agent) fn should_use_active_text_pool_for_images(config: &AppConfig) -> bool {
     config.plugins.vision.prefer_current_multimodal_model
         && active_text_pool_supports_vision(config)
