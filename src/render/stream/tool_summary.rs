@@ -89,6 +89,7 @@ impl StreamRenderer {
         }
         self.stop_waiting()?;
         self.tool_preparing_since = None;
+        self.reanchor_wait_timer();
         self.end_subagent_stream_line()?;
         let status = if ok { "ok" } else { "err" };
         let elapsed = self.finish_subagent_timer(name);
