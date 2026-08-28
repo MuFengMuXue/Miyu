@@ -10,3 +10,4 @@ mod pop_menu;
 mod shared;
 mod slash_commands;
 mod variant_menu;
+mod wait_spinner_cursor;
