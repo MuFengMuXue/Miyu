@@ -34,8 +34,9 @@
 - webui设置界面优化
 - 插件dashboard移植
 - 图片渲染不再依赖chafa
-- 提高遵循角色扮演的能力
-- 在不影响功能的情况下以md格式返回工具输出而不是json格式，以节省json结构导致的不必要token消耗，
+- 优化io性能
+
+- dev模式下/undo无法使用
 
 ## Feats
 
