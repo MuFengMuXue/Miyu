@@ -91,7 +91,13 @@ pub(in crate::agent) fn rewrite_image_placeholders_with_paths(
 ) -> String {
     let mut output = String::new();
     let mut rest = input;
-    while let Some(start) = rest.find("[Image ") {
+    // 视频占位符走同一套改写:漏掉 `[Video N]` 的话,没能内联的视频就连路径都
+    // 传不到模型面前,`vision_analyze` 也就无从下手(08-28)。
+    while let Some(start) = crate::clipboard::MEDIA_PLACEHOLDER_PREFIXES
+        .iter()
+        .filter_map(|prefix| rest.find(prefix))
+        .min()
+    {
         output.push_str(&rest[..start]);
         let after_start = &rest[start..];
         let Some(end) = after_start.find(']') else {
@@ -101,7 +107,12 @@ pub(in crate::agent) fn rewrite_image_placeholders_with_paths(
         let placeholder = &after_start[..=end];
         if let Some(index) = image_placeholder_index(placeholder) {
             if let Some(Some(path)) = paths.get(index - 1) {
-                output.push_str(&format!("[Image {index}: {path}]"));
+                // 标签原样保留,别把视频改写成图片。
+                let label = crate::clipboard::media_placeholder_prefix(placeholder)
+                    .unwrap_or("[Image ")
+                    .trim_start_matches('[')
+                    .trim_end();
+                output.push_str(&format!("[{label} {index}: {path}]"));
             } else {
                 output.push_str(placeholder);
             }
@@ -116,7 +127,7 @@ pub(in crate::agent) fn rewrite_image_placeholders_with_paths(
 
 pub(in crate::agent) fn image_placeholder_index(placeholder: &str) -> Option<usize> {
     let inner = placeholder
-        .strip_prefix("[Image ")?
+        .strip_prefix(crate::clipboard::media_placeholder_prefix(placeholder)?)?
         .strip_suffix(']')?
         .trim_start();
     let num: String = inner.chars().take_while(|c| c.is_ascii_digit()).collect();

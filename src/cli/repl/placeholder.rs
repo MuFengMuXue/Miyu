@@ -38,8 +38,8 @@ pub(in crate::cli) fn extract_image_placeholders(
     for (start, end) in &placeholders {
         clean.extend(&chars[last_end..*start]);
         let segment: String = chars[*start..*end].iter().collect();
-        let name_str = segment
-            .strip_prefix("[Image ")
+        let name_str = media_placeholder_prefix(&segment)
+            .and_then(|prefix| segment.strip_prefix(prefix))
             .and_then(|s| {
                 // 序号可能是多位数("[Image 10: ...]"),char pattern 的
                 // strip_prefix 只剥一位,会把第 10 张起的图静默丢弃。
@@ -96,20 +96,38 @@ pub(in crate::cli) fn pasted_text_placeholder(index: usize, line_count: usize) -
     }
 }
 
+/// 返回**生插入**的行数(被折成占位符时为 0)。
+///
+/// 调用方拿它判断"输入框里有多少内容是粘进来的原文",输入区的整体折叠只该
+/// 在这种内容占满缓冲区时才发生——见 `repl_visible_input_lines`。
 pub(in crate::cli) fn insert_pasted_text_at_cursor(
     input: &mut String,
     cursor: &mut usize,
     text: String,
     pasted_texts: &mut Vec<Option<PastedText>>,
-) {
+) -> usize {
     let text = strip_terminal_control_sequences(&text);
     if should_summarize_pasted_text(&text) {
         let index = pasted_texts.len() + 1;
         let placeholder = pasted_text_placeholder(index, pasted_text_line_count(&text));
         insert_str_at_cursor(input, cursor, &placeholder);
         pasted_texts.push(Some(PastedText { text }));
+        0
     } else {
+        let lines = pasted_text_line_count(&text);
         insert_str_at_cursor(input, cursor, &text);
+        lines
+    }
+}
+
+pub(in crate::cli) use crate::clipboard::{media_placeholder_prefix, MEDIA_PLACEHOLDER_PREFIXES};
+
+/// 按剪贴板里的文件挑标签。
+pub(in crate::cli) fn media_placeholder_label(path: &str) -> &'static str {
+    if crate::tools::vision::video_mime(path).is_some() {
+        "Video"
+    } else {
+        "Image"
     }
 }
 
@@ -119,7 +137,8 @@ pub(in crate::cli) fn find_repl_placeholders(input: &str) -> Vec<(usize, usize)>
     let mut i = 0;
     while i < chars.len() {
         let prefix_len = if i + 7 <= chars.len()
-            && chars[i..i + 7].iter().collect::<String>() == "[Image "
+            && MEDIA_PLACEHOLDER_PREFIXES
+                .contains(&chars[i..i + 7].iter().collect::<String>().as_str())
         {
             Some(7)
         } else if i + 8 <= chars.len() && chars[i..i + 8].iter().collect::<String>() == "[Pasted " {
@@ -235,7 +254,7 @@ pub(in crate::cli) fn parse_image_placeholder_index(
 ) -> Option<usize> {
     let chars: Vec<char> = input.chars().collect();
     let segment: String = chars[char_start..char_end].iter().collect();
-    let after_prefix = segment.strip_prefix("[Image ")?;
+    let after_prefix = segment.strip_prefix(media_placeholder_prefix(&segment)?)?;
     let num_str: String = after_prefix
         .chars()
         .take_while(|c| c.is_ascii_digit())

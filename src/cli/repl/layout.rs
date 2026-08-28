@@ -27,14 +27,22 @@ pub(in crate::cli) enum CursorAfterUpdate {
     Hidden,
 }
 
+/// 输入区太长时折成「首行 + 已隐藏 N 行 + 末行」。
+///
+/// `raw_pasted_lines` 是当前缓冲区里由**生粘贴**(没被折成占位符的那种)带进来
+/// 的行数。判据原本是"上一个动作是不是粘贴",于是在已经敲了十几行之后再粘一
+/// 小段,整个输入框——连同用户自己敲的内容——都会被折起来,随便再打个字又恢复
+/// (08-26 用户实测)。折叠的本意是挡住粘进来的大段原文,不是藏用户自己写的
+/// 东西,所以要求生粘贴内容确实占满了缓冲区才折。
 pub(in crate::cli) fn repl_visible_input_lines(
     prefix: &str,
     lines: &[String],
     max_rows: u16,
-    is_pasted: bool,
+    raw_pasted_lines: usize,
 ) -> Vec<String> {
     let total_rows = repl_prompt_rows(prefix, lines);
-    if total_rows <= max_rows || lines.len() <= 2 || !is_pasted {
+    let dominated_by_paste = raw_pasted_lines >= lines.len().saturating_sub(2);
+    if total_rows <= max_rows || lines.len() <= 2 || raw_pasted_lines == 0 || !dominated_by_paste {
         return lines.to_vec();
     }
 
