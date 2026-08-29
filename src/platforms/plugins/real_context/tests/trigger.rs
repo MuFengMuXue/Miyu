@@ -355,3 +355,37 @@ fn directly_triggered_image_is_a_primary_target() {
     assert!(!prompt.contains("无明确文字目标消息"));
     assert!(!prompt.contains("同一用户随后发送的补充材料"));
 }
+
+/// 限额耗尽时直触发照样回复,但整段主动判断被跳过。这条出口过去不写
+/// TRIGGER_KEY,下游拿不到唤醒理由——08-29 排查时注入块因此整条哑火,
+/// 而日志里一个字都没有,只能靠"回复出现了却没有判官决定"倒推,推错了
+/// 一次。现在既写 trigger 也留痕。
+#[tokio::test]
+async fn an_exhausted_reply_quota_still_records_the_trigger() {
+    let (_temp, context) = availability_context(BotSendAvailability::Available);
+    context.set_reply_rate_available(false);
+    let event = inbound_event();
+    let mut decision = TriggerDecision {
+        should_reply: true,
+        content: event.text.clone(),
+        response_target: None,
+    };
+
+    RealContextPlugin::new()
+        .decide_group_trigger(
+            &context,
+            &event,
+            &mut decision,
+            &RealContextPluginSettings::default(),
+        )
+        .await
+        .unwrap();
+
+    assert!(decision.should_reply, "限额耗尽不该吃掉直接触发的回复");
+    assert_eq!(
+        context
+            .plugin_value(TRIGGER_KEY)
+            .and_then(|value| value.as_str().and_then(TriggerKind::parse)),
+        Some(TriggerKind::Direct),
+    );
+}

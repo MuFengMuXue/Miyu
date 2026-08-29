@@ -26,6 +26,20 @@ impl RealContextPlugin {
             self.clear_cancelled_pending(context, &event.sender_id)
                 .await;
             decision.should_reply = system_triggered;
+            // 限额耗尽时直触发照样回复,但整段主动判断被跳过。这里不写
+            // TRIGGER_KEY 的话,下游拿不到本轮的唤醒理由(08-29:注入块因此
+            // 整条哑火,排查时被误判成"改了没生效")。
+            if decision.should_reply {
+                context.set_plugin_value(
+                    TRIGGER_KEY,
+                    Value::String(TriggerKind::Direct.as_str().to_string()),
+                );
+                self.log_bypass(
+                    context,
+                    TriggerKind::Direct,
+                    "回复限额已用尽，本轮不做主动判断",
+                );
+            }
             return Ok(());
         }
 
@@ -99,6 +113,7 @@ impl RealContextPlugin {
                     Value::String(TriggerKind::Direct.as_str().to_string()),
                 );
                 self.commit_direct_reply(context, event, settings).await;
+                self.log_bypass(context, TriggerKind::Direct, "本会话不做主动判断");
             }
             return Ok(());
         }
@@ -218,6 +233,7 @@ impl RealContextPlugin {
                 reactions,
                 inherited_targets,
             );
+            self.log_bypass(context, trigger, "覆盖窗口内沿用上一轮已承诺的回复");
             return Ok(());
         }
         let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
@@ -524,6 +540,23 @@ impl RealContextPlugin {
         Ok(())
     }
 
+    pub(in crate::platforms::plugins::real_context) fn log_bypass(
+        &self,
+        context: &PlatformTurnContext,
+        trigger: TriggerKind,
+        reason: &str,
+    ) {
+        let readable = format_active_reply_bypass_log(
+            &context.conversation.account_id,
+            &context.conversation.conversation_id,
+            &context.sender_display_name,
+            &context.sender_id,
+            trigger,
+            reason,
+        );
+        tracing::info!(target: "miyu::qq", "\n{readable}");
+    }
+
     pub(in crate::platforms::plugins::real_context) fn log_skip(
         &self,
         context: &PlatformTurnContext,
@@ -688,6 +721,15 @@ impl RealContextPlugin {
         }
         // 逐轮出现/消失的块走 turn 尾部通道:进 system prompt 会让整段历史
         // 前缀在块出现和消失时各失效一次(v7 append-only 不变式)。
+        // 这里曾按 TriggerKind 注入过一段提示(先是"本轮怎么被叫醒",后改成
+        // "读空气"),08-29 两版都撤了。第一版复述了「没人叫你」——那正是
+        // `mentioned_bot: false` 引出「没被艾特就不接」的同一颗种子,用人话
+        // 再种一遍,实测她原话回「没被艾特不接（笑）」;Supersede 那支还断言
+        // 「有人明确叫了你」而继承来的原始 trigger 是概率抽样,断言为假,她
+        // 当面反驳。第二版措辞改干净了,但这条通道逐轮化石化:一段恒定文本
+        // 会在每个主动插话的回合永久多带 ~45 token,只增不减,而
+        // `[SystemInfo:` 那个"字节相同就跳过"的去重够不着它。要再做,先解决
+        // 恒定块的去重,别直接往这儿加。
         if let Some(warning) = identity_warning(context, settings) {
             input.turn_system_context.push(warning);
         }

@@ -278,6 +278,54 @@ pub(in crate::platforms::plugins::real_context) fn format_active_reply_skip_log_
     }
 }
 
+/// 未经判官直接回复的留痕。这三条路径(限额耗尽、本会话不做主动判断、
+/// 覆盖窗口沿用已承诺回复)此前一行日志都不打,取证时是黑洞:08-29 排查
+/// 两次「元层拒答」,只能靠"回复出现了但没有判官决定"做减法,推错过一次。
+pub(in crate::platforms::plugins::real_context) fn format_active_reply_bypass_log(
+    account_id: &str,
+    group_id: &str,
+    sender_name: &str,
+    sender_id: &str,
+    trigger: TriggerKind,
+    reason: &str,
+) -> String {
+    format_active_reply_bypass_log_for(
+        account_id,
+        group_id,
+        sender_name,
+        sender_id,
+        trigger,
+        reason,
+        crate::i18n::locale(),
+    )
+}
+
+pub(in crate::platforms::plugins::real_context) fn format_active_reply_bypass_log_for(
+    account_id: &str,
+    group_id: &str,
+    sender_name: &str,
+    sender_id: &str,
+    trigger: TriggerKind,
+    reason: &str,
+    locale: Locale,
+) -> String {
+    if locale == Locale::Zh {
+        format!(
+            "（未经判断直接回复）\n会话：群聊 {group_id}（机器人 QQ {account_id}）\n发送者：{}（QQ {sender_id}）\n触发：{}\n结果：回复\n跳过判断的原因：{}",
+            empty_as(sender_name, "未知用户"),
+            trigger.log_label(locale),
+            empty_as(reason, "未提供"),
+        )
+    } else {
+        format!(
+            "[Replied without an active-reply judgement]\nConversation: group {group_id} (bot QQ {account_id})\nSender: {} (QQ {sender_id})\nTrigger: {}\nResult: reply\nJudgement skipped because: {}",
+            empty_as(sender_name, "unknown user"),
+            trigger.log_label(locale),
+            empty_as(reason, "not provided"),
+        )
+    }
+}
+
 pub(in crate::platforms::plugins::real_context) fn localized_affection_level<'a>(
     level: &'a str,
     locale: Locale,
