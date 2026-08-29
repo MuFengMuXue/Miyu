@@ -539,12 +539,37 @@ pub(in crate::web) fn attach_owner_turn_tools(
         crate::platforms::register_platform_tools(registry, platform);
         return;
     }
-    // 与 task.rs 相同的条件:非平台会话才有所有者侧工具。
     crate::tools::register_ask_question(registry);
-    if mode == AgentMode::Normal {
+    // artifact / 分享是 WebUI 专有:预览文件要网页端才渲染得出来。REPL 里
+    // 拿到它,模型就会把文档"扔进 artifact"——那地方你根本看不见
+    // (08-29 用户实测,东京攻略写进了 data/artifacts 没人知道)。
+    //
+    // 主线回合按 `is_local_webui_request` 收口(turns/task.rs:224),桥这条路
+    // 原来只看 mode,注释还写着"与 task.rs 相同的条件",其实少了一半。
+    // claude-code 的工具**只能**从 MCP 桥拿,于是 REPL 里照样拿到——
+    // 08-26 那次"群友经由桥能调 run_command"是同一个坑的另一半。
+    if mode == AgentMode::Normal && session_is_running_local_webui(state, session_id) {
         crate::tools::register_webui_artifact_tools(registry, &state.paths, session_id);
         crate::tools::register_webui_share_tools(registry, config, state.state_store.clone());
     }
+}
+
+/// 本会话正在跑的回合是不是 WebUI 面。判据与主线回合同源——同一个
+/// `is_local_webui_request`,只是 audience 与 profile 改从 `RunInfo` 上读,
+/// 桥没有别的途径知道自己在为谁服务。
+///
+/// 没有在跑的回合就判否:桥也可能来自 `miyu tool-call` 这类回合外调用,
+/// 那时宁可少给(与 08-26 收口同一取向)。
+fn session_is_running_local_webui(state: &DaemonState, session_id: &str) -> bool {
+    let manager = state.manager.lock().unwrap();
+    let local =
+        |info: &RunInfo| is_local_webui_request(info.audience, info.platform_followup.is_some());
+    let mut runs = manager
+        .active_runs
+        .values()
+        .filter(|info| &*info.session_id == session_id);
+    runs.next()
+        .is_some_and(|first| local(first) && runs.all(local))
 }
 
 pub(in crate::web) fn session_api_error(message: String) -> ApiError {
