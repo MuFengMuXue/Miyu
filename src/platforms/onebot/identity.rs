@@ -326,9 +326,20 @@ pub(in crate::platforms::onebot) fn qq_turn_system_context(
         }
     }
     if let Some(event) = event {
+        // 这里原来还有 `"mentioned_bot": event.mentioned_bot`。判官放行、
+        // 回合已经起来之后,「该不该回」已经不是人格模型的问题了,而这个字段
+        // 只对那个问题有用——它是全项目唯一一处「陈述一件没发生的事」,也
+        // 正好是一个现成判据。08-29 实测:她拿它推出「没提到我 不接」当成
+        // 正文发进群里,一天八次,其中一次是创造者的直接提问。
+        //
+        // 被 @ 的事实没有丢:当前消息块的 `@mentions:` 行会把她自己渲染成
+        // `[you]`(targeting::format_mentioned_users)。区别是"被提到"作为
+        // 事实出现,"没被提到"只是单纯不出现,不再有可供立规矩的否定陈述。
+        //
+        // 判官那份 (judge.rs) 保留该字段:判官的职责就是判定 bot 是不是预期
+        // 应答者,这是它的正当输入。
         let mut message = serde_json::json!({
             "id": event.message_id,
-            "mentioned_bot": event.mentioned_bot,
         });
         if let Some(quoted) = event.replied_message.as_ref() {
             let quoted_identity =

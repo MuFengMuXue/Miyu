@@ -279,6 +279,7 @@ fn signed_current_message(context: &PlatformTurnContext, current_text: &str) -> 
         &event.mentioned_users,
         &event.mentioned_user_ids,
         show_ids,
+        Some(event.conversation.account_id.as_str()),
     ) {
         line.push_str(&format!("\n  @mentions: {mentions}"));
     }

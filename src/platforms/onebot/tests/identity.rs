@@ -208,6 +208,15 @@ fn named_mention_reaches_the_turn_context_without_appearing_in_the_text() {
     assert!(system.contains("\"display_name\":\"yuyi\""));
     assert!(system.contains("\"qq_id\":\"8\""));
     assert!(!parsed.text.contains("yuyi"));
+
+    // 08-29:回合上下文里不再有 `mentioned_bot`。判官放行、回合已经起来之后
+    // 「该不该回」不是人格模型的问题,而这个字段只对那个问题有用;它是全项目
+    // 唯一一处「陈述一件没发生的事」,实测被她拿去推出「没提到我 不接」并当
+    // 成正文发进群里。被 @ 的事实改由当前消息块的 `[you]` 承载。
+    assert!(
+        !system.contains("mentioned_bot"),
+        "回合上下文不该再声明有没有被 @：{system}"
+    );
 }
 
 #[test]

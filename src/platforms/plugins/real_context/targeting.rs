@@ -239,10 +239,20 @@ pub(in crate::platforms::plugins::real_context) fn set_active_targets(
     }
 }
 
+/// `@mentions:` 行。`self_id` 给出时,机器人自己那一项渲染成 `[you]`——
+/// 与历史块里 `[you] marks your own messages` 同一个记号。
+///
+/// 08-29:`<qq-request-context>` 原来还带一个 `"mentioned_bot": false`,那是
+/// 全项目唯一一处「陈述一件没发生的事」。判官放行、回合已经起来之后,这个
+/// 字段对人格模型没有任何正当用途,却正好是一个现成判据——实测她拿它推出
+/// 「没提到我 不接」并当成正文发进群里(当天八次)。字段已删,这里补上正向
+/// 的一半:被 @ 时事实照常在场,没被 @ 时单纯不出现,不再有可供立规矩的否定
+/// 陈述。
 pub(in crate::platforms::plugins::real_context) fn format_mentioned_users(
     users: &[PlatformMention],
     user_ids: &[String],
     show_ids: bool,
+    self_id: Option<&str>,
 ) -> Option<String> {
     let users = if users.is_empty() {
         user_ids
@@ -261,15 +271,20 @@ pub(in crate::platforms::plugins::real_context) fn format_mentioned_users(
     Some(
         users
             .iter()
-            .map(|user| match user.display_name.as_deref() {
-                Some(name) if show_ids => format!(
-                    "{}(QQ:{})",
-                    safe_prompt_field(name),
-                    safe_prompt_field(&user.user_id)
-                ),
-                Some(name) => safe_prompt_field(name),
-                None if show_ids => format!("QQ:{}", safe_prompt_field(&user.user_id)),
-                None => "unresolved group member".to_string(),
+            .map(|user| {
+                if self_id.is_some_and(|self_id| self_id == user.user_id) {
+                    return "[you]".to_string();
+                }
+                match user.display_name.as_deref() {
+                    Some(name) if show_ids => format!(
+                        "{}(QQ:{})",
+                        safe_prompt_field(name),
+                        safe_prompt_field(&user.user_id)
+                    ),
+                    Some(name) => safe_prompt_field(name),
+                    None if show_ids => format!("QQ:{}", safe_prompt_field(&user.user_id)),
+                    None => "unresolved group member".to_string(),
+                }
             })
             .collect::<Vec<_>>()
             .join("、"),
@@ -386,6 +401,7 @@ pub(in crate::platforms::plugins::real_context) fn active_target_prompt(
             &target.mentioned_users,
             &target.mentioned_user_ids,
             show_ids,
+            Some(context.conversation.account_id.as_str()),
         ) {
             line.push_str(&format!("\n  @mentions: {mentions}"));
         }

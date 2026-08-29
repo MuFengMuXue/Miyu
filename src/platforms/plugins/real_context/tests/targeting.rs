@@ -140,3 +140,37 @@ fn supersede_inherits_targets_only_for_the_same_sender() {
     other.sender_id = "other-user".to_string();
     assert!(!plugin.preempt_inbound(&context, &other).unwrap());
 }
+
+/// 被 @ 时,自己那一项渲染成 `[you]`;没被 @ 时这行里单纯没有自己——
+/// 不再有任何「你没被提到」的否定陈述可供她立规矩(08-29)。
+#[test]
+fn the_mention_line_marks_the_bot_itself_and_says_nothing_when_absent() {
+    let mentions = vec![
+        PlatformMention {
+            user_id: "10000".to_string(),
+            display_name: Some("Miyu".to_string()),
+        },
+        PlatformMention {
+            user_id: "40000".to_string(),
+            display_name: Some("yuyi".to_string()),
+        },
+    ];
+    let ids = vec!["10000".to_string(), "40000".to_string()];
+
+    let rendered = format_mentioned_users(&mentions, &ids, true, Some("10000")).unwrap();
+    assert_eq!(rendered, "[you]、yuyi(QQ:40000)");
+
+    // 别人之间互相 @：这行里没有自己,也没有任何"你没被提到"的说法。
+    let others = vec![PlatformMention {
+        user_id: "40000".to_string(),
+        display_name: Some("yuyi".to_string()),
+    }];
+    let rendered =
+        format_mentioned_users(&others, &["40000".to_string()], true, Some("10000")).unwrap();
+    assert_eq!(rendered, "yuyi(QQ:40000)");
+    assert!(!rendered.contains("you"));
+
+    // 历史块传 None:行为与改动前一致。
+    let rendered = format_mentioned_users(&mentions, &ids, true, None).unwrap();
+    assert_eq!(rendered, "Miyu(QQ:10000)、yuyi(QQ:40000)");
+}

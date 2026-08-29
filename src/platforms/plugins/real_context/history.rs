@@ -266,10 +266,14 @@ pub(in crate::platforms::plugins::real_context) fn format_history_internal(
                 safe_prompt_field(reply_to)
             ));
         }
+        // 历史块暂不标 [you]:自己发的消息本来就有 [you] 前缀,这里再用同
+        // 一个记号表示"被提到"会撞义,而且要把本机账号一路穿进来。先只在
+        // 当前消息块上做。
         if let Some(mentions) = format_mentioned_users(
             &message.content.mentioned_users,
             &message.content.mentioned_user_ids,
             show_user_ids,
+            None,
         ) {
             line.push_str(&format!("\n  @mentions: {mentions}"));
         }
