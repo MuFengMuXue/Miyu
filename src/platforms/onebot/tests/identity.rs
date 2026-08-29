@@ -165,8 +165,10 @@ fn qq_sender_and_group_metadata_stay_out_of_user_text() {
     assert!(!private_hidden.contains("\"id\":\"7\""));
 }
 
+/// @ 的身份元数据走 `<qq-request-context>`,不靠正文里的名字:正文只有
+/// 一个 CQ at 段,昵称从来不出现在文本里。
 #[test]
-fn named_mention_survives_after_the_qq_wake_prefix_is_removed() {
+fn named_mention_reaches_the_turn_context_without_appearing_in_the_text() {
     let config = config_with(|config| {
         config.group_chats.trigger_keywords = vec!["miyu".to_string()];
     });
@@ -175,9 +177,10 @@ fn named_mention_survives_after_the_qq_wake_prefix_is_removed() {
         { "type": "at", "data": { "qq": "8" } }
     ]);
     let parsed = parse_message(Some(&message), None, 10_000);
+    // 唤醒词不再剥离(见 admission::keyword_wake_keeps_the_whole_sentence)。
     assert_eq!(
         group_trigger_text(&config, &parsed, None, 10_000).as_deref(),
-        Some("他是谁 ")
+        Some("miyu，他是谁 ")
     );
     let mut event = message_event(
         Target::Group { group_id: 42 },

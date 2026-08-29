@@ -21,9 +21,11 @@ fn group_trigger_matrix() {
         config.group_chats.trigger_keywords = vec!["/cmd".into()];
     });
     parsed.at_self = false;
+    // 唤醒词留在正文里:剥掉它对名字型唤醒词无害,对有实义的词是毁句
+    // (见 keyword_wake_keeps_the_whole_sentence)。
     assert_eq!(
         group_trigger_text(&prefix, &parsed, None, 10_000).as_deref(),
-        Some("查询")
+        Some("/cmd 查询")
     );
     parsed.text = "无前缀".into();
     assert!(group_trigger_text(&prefix, &parsed, None, 10_000).is_none());
@@ -38,7 +40,7 @@ fn group_trigger_matrix() {
     parsed.text = "喵喵：早上好".into();
     assert_eq!(
         group_trigger_text(&either, &parsed, None, 10_000).as_deref(),
-        Some("早上好")
+        Some("喵喵：早上好")
     );
 
     parsed.text = "继续说".into();
@@ -59,6 +61,44 @@ fn group_trigger_matrix() {
         group_trigger_text(&at_only, &parsed, Some(&replied_message), 10_000).as_deref(),
         Some("继续说")
     );
+}
+
+/// 唤醒词不剥离。剥离本来是给名字型唤醒词写的(`miyu 你好` → `你好`),
+/// 但关键词表里可以是任何词:用户把「为什么」设成唤醒词,
+/// 「为什么不查知识库」被剥成「不查知识库」——疑问句变祈使句,意思正好
+/// 反过来,她照着"别查"去做(08-29 用户实测)。
+///
+/// 而且剥离只影响人格模型那一份:`observe_inbound` 与判官都在
+/// `parsed.text = trigger.content`(dispatch.rs)之前跑,拿的是完整原文。
+/// 同一条消息两个模型读出两个意思,剥离制造的是不一致而不是干净。
+#[test]
+fn keyword_wake_keeps_the_whole_sentence() {
+    let config = config_with(|config| {
+        config.group_chats.trigger_keywords = vec!["miyu".into(), "为什么".into()];
+    });
+    for text in [
+        "为什么不查知识库",
+        "为什么 不查知识库",
+        "miyu 你好",
+        "miyu：你好",
+    ] {
+        let parsed = InboundMessage {
+            text: text.into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            group_trigger_text(&config, &parsed, None, 10_000).as_deref(),
+            Some(text),
+            "{text}"
+        );
+    }
+
+    // 只认开头,句中出现不算唤醒。
+    let parsed = InboundMessage {
+        text: "他问为什么不查知识库".into(),
+        ..Default::default()
+    };
+    assert!(group_trigger_text(&config, &parsed, None, 10_000).is_none());
 }
 
 #[tokio::test]

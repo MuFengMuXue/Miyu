@@ -151,19 +151,21 @@ pub(in crate::platforms::onebot) fn group_trigger_text(
         return Some(parsed.text.clone());
     }
     let text = parsed.text.trim_start();
-    let keyword = config
+    // 唤醒词留在正文里。这里曾把它连同后面的分隔符一起剥掉——那是按名字型
+    // 唤醒词想的(`miyu 你好` → `你好`),但关键词表接受任何词:用户把「为什么」
+    // 设成唤醒词,「为什么不查知识库」被剥成「不查知识库」,疑问句变祈使句,
+    // 她照着"别查"去做(08-29 实测)。
+    //
+    // 剥离还只影响人格模型那一份:`observe_inbound`(入历史库)与主动回复判官
+    // 都在 `parsed.text = trigger.content`(dispatch.rs)之前跑,读到的是完整
+    // 原文。剥离制造的是"同一条消息两个模型读出两个意思",不是干净。
+    // @ 唤醒与引用唤醒本来也不剥,上面那两条分支直接返回全文。
+    config
         .group_chats
         .trigger_keywords
         .iter()
-        .filter(|keyword| text.starts_with(keyword.as_str()))
-        .max_by_key(|keyword| keyword.chars().count())?;
-    let rest = &text[keyword.len()..];
-    Some(
-        rest.trim_start_matches(|ch: char| {
-            ch.is_whitespace() || matches!(ch, ':' | '：' | ',' | '，')
-        })
-        .to_string(),
-    )
+        .any(|keyword| text.starts_with(keyword.as_str()))
+        .then(|| parsed.text.clone())
 }
 
 pub(in crate::platforms::onebot) fn decode_cq_text(text: &str) -> String {
