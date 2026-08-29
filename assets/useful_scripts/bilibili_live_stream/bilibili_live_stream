@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# 显示名称：哔哩哔哩直播推流码获取
-# 描述：控制哔哩哔哩直播间并取得推流地址与推流码（流密钥），可直接填入 OBS / ffmpeg。支持扫码登录（生成二维码 PNG 由调用方转交用户）、查询直播间状态、开播、下播。开播会使直播间立刻对外可见并推送给粉丝，须先获得用户明确同意。仅依赖 Python 标准库，凭据存于缓存目录。
-# Description: Control a Bilibili live room and obtain its RTMP/SRT push address and stream key for OBS/ffmpeg. Supports QR login (writes a PNG for the caller to hand to the user), room status, start and stop. Starting a stream makes the room publicly visible and notifies followers, so it requires explicit user consent. Stdlib-only; credentials live in the cache directory.
+# 显示名称：哔哩哔哩直播控制
+# 描述：控制哔哩哔哩直播间：改直播标题、改分区、开播并取得推流地址与推流码（流密钥，可直接填入 OBS / ffmpeg）、下播。支持扫码登录（生成二维码 PNG 由调用方转交用户），以及只读的直播间状态与分区查询。分区可以直接写中文名或拼音，脚本自己解析成 id。开播会使直播间立刻对外可见并推送给粉丝，须先获得用户明确同意。仅依赖 Python 标准库，凭据存于缓存目录。
+# Description: Control a Bilibili live room: set the room title, set the category (area), start streaming and obtain the RTMP/SRT push address and stream key for OBS/ffmpeg, and stop. Supports QR login (writes a PNG for the caller to hand to the user) plus read-only room status and area lookup; areas can be named in Chinese or pinyin and are resolved to ids by the script. Starting a stream makes the room publicly visible and notifies followers, so it requires explicit user consent. Stdlib-only; credentials live in the cache directory.
 
 """哔哩哔哩直播控制工具（面向 AI 调用设计）。
 
@@ -19,7 +19,14 @@
              阻塞等待可以加 --wait 秒数，但那只适合有人盯着实时终端的场景。）
   logout   删除本地凭据。
   status   查询直播间状态（房间号、标题、分区、是否在播）。只读。
-  start    开播，返回推流地址与推流码。
+  areas    查分区。不带参数只列父分区；--search 关键词 在全部子分区里搜；
+           --parent 父分区 列出它下面的子分区。只读，且不需要登录。
+  update   改直播间设置：--title 改直播标题，--area 改分区，两个可以一起给
+           （一起给是一次请求，要么全成要么全不成；分开连着调会被限流）。
+           分区写法随意：数字 id、子分区名（"虚拟日常"）、拼音（"xunirichang"）、
+           或"父分区/子分区"（"虚拟主播/虚拟日常"）消歧。
+           改动对已经在播的直播间也立刻生效。
+  start    开播，返回推流地址与推流码。也接受 --title / --area，顺手改了再开。
            ★ 副作用：直播间立刻对外可见、粉丝会收到开播推送。这是不可静默撤销的
              对外动作，调用前必须获得用户明确同意。
   stop     下播。
@@ -28,6 +35,12 @@
       要完整结构化数据加 --json，成功为 {"ok":true,"command":...,"data":{...}}，
       失败为 {"ok":false,"command":...,"error":{...}}。
       两种模式都写 stdout，成功退出码 0，失败退出码 1。
+
+分区名解析不出唯一结果时会报 usage 错误，候选列在 error.detail.candidates 里，
+拿去问用户或直接改用 id 重试即可。分区列表缓存一天，加 --refresh 强制刷新。
+有些分区（比如虚拟主播区）要账号做过人脸认证才能用，改过去会拿到 api 错误
+60024/60043；这时只能换分区，或者让用户先去 App 里认证。改直播间设置有频率限制，
+撞上 code -1「操作太频繁」等十几秒重试即可。
 
 error.kind 是稳定的分支依据：
   auth                没登录或登录态失效        → 引导用户跑 login
@@ -38,11 +51,13 @@ error.kind 是稳定的分支依据：
 需要展示给用户的二维码一律写成 PNG 文件并返回路径，由你决定怎么呈现给用户，
 脚本自己不会往终端画任何图形。
 
-凭据存在缓存目录（默认 ~/.cache/bilibili-stream-key/credentials.json，权限 0600），
-只由 login 写入、logout 删除，没有别的来源。推流码是敏感凭据，不要转发给第三方服务。
+凭据存在缓存目录（默认 ~/.cache/bilibili-live-stream/credentials.json，权限 0600），
+只由 login 写入、logout 删除，没有别的来源。分区列表缓存在同目录的 areas.json，
+删了只会多一次请求。推流码是敏感凭据，不要转发给第三方服务。
 
 逻辑取自 bili-live-hime https://github.com/Rsplwe/bili-live-hime
-（APP 签名见 src/lib/app-sign.ts，开播流程见 src/api/live.ts 与
+（APP 签名见 src/lib/app-sign.ts，开播与改标题/改分区见 src/api/live.ts 的
+startLive / updateRoomTitle / updateRoomArea，界面流程见
 src/view/live-stream-settings.tsx）。只依赖 Python 标准库，Python ≥ 3.8。
 """
 
@@ -61,7 +76,7 @@ from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 # src/lib/app-sign.ts —— 直播姬 (bilibili link) 的 appkey / appsec
 APP_KEY = "aae92bc66f3edfab"
@@ -87,9 +102,12 @@ LIVE_BASE = "https://api.live.bilibili.com"
 MAIN_BASE = "https://api.bilibili.com"
 PASSPORT_BASE = "https://passport.bilibili.com"
 
-APP_NAME = "bilibili-stream-key"
+APP_NAME = "bilibili-live-stream"
+LEGACY_APP_NAME = "bilibili-stream-key"   # 脚本改名前用的缓存目录名
 TIMEOUT = 15.0
 QR_TTL = 180                       # B 站登录二维码的有效期（秒）
+AREA_TTL = 24 * 3600               # 分区列表基本不动，缓存一天
+AREA_LIST_LIMIT = 60               # 单次最多列这么多子分区，免得刷屏
 LIVE_STATUS_TEXT = {0: "未开播", 1: "直播中", 2: "轮播中"}
 REQUIRED_COOKIES = ("SESSDATA", "bili_jct")
 
@@ -120,7 +138,10 @@ class ApiError(ToolError):
     HINTS = {
         -101: "登录态已失效，让用户重新跑一次 login。",
         -111: "csrf 校验失败，让用户重新跑一次 login。",
-        60009: "分区不存在。",
+        -1: "改直播间设置太频繁了，等十几秒再试。",
+        60009: "分区不存在。先用 areas 查一个有效的分区。",
+        60024: "这个分区要人脸认证才能用。换一个分区，或让用户先在 App 里认证。",
+        60043: "这个分区要人脸认证才能用。换一个分区，或让用户先在 App 里认证。",
         60013: "非法请求（签名或版本号异常）。",
     }
 
@@ -287,12 +308,22 @@ class BiliClient:
             params={"system_version": "2", "ts": str(int(time.time() * 1000))},
             sign="query", headers={"origin": LIVE_BASE})
 
-    def update_title(self, room_id, title):
+    def area_list(self):
+        """src/api/live.ts getAreaList：父分区数组，每个带 list 子分区。"""
+        return self.call(LIVE_BASE, "/room/v1/Area/getList",
+                         params={"show_pinyin": "1"}, headers={"origin": LIVE_BASE})
+
+    def update_room(self, room_id, title=None, area_id=None):
+        """src/api/live.ts 的 updateRoomTitle / updateRoomArea 打的是同一个接口，
+        这里合成一次发：连着发两次 update，第二次会被 B 站挡成"操作太频繁"(-1)。"""
+        data = {"room_id": str(room_id), "platform": "pc_link",
+                "csrf": self.csrf, "csrf_token": self.csrf}
+        if title is not None:
+            data["title"] = title
+        if area_id is not None:
+            data["area_id"] = str(area_id)
         return self.call(LIVE_BASE, "/room/v1/Room/update", method="POST",
-                         data={"room_id": str(room_id), "title": title,
-                               "platform": "pc_link",
-                               "csrf": self.csrf, "csrf_token": self.csrf},
-                         headers={"origin": LIVE_BASE})
+                         data=data, headers={"origin": LIVE_BASE})
 
     def start_live(self, room_id, area_v2, version, build):
         return self.call(
@@ -720,11 +751,12 @@ def qr_png_bytes(text, level="L", scale=10, quiet=4):
 
 
 def prog():
-    return os.path.basename(sys.argv[0]) or "get_bilibili_stream_key.py"
+    return os.path.basename(sys.argv[0]) or "bilibili_live_stream"
 
 
 def cache_dir():
-    home = os.environ.get("BILIBILI_STREAM_KEY_HOME")
+    home = (os.environ.get("BILIBILI_LIVE_STREAM_HOME")
+            or os.environ.get("BILIBILI_STREAM_KEY_HOME"))
     if home:
         return os.path.expanduser(home)
     system = platform.system()
@@ -734,7 +766,15 @@ def cache_dir():
         root = os.path.expanduser("~/Library/Caches")
     else:
         root = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    return os.path.join(root, APP_NAME)
+    path = os.path.join(root, APP_NAME)
+    legacy = os.path.join(root, LEGACY_APP_NAME)
+    # 脚本改名前登录过的人，把老缓存目录整个搬过来，省得白登一次
+    if not os.path.exists(path) and os.path.isdir(legacy):
+        try:
+            os.rename(legacy, path)
+        except OSError:
+            return legacy
+    return path
 
 
 def _cache_file(name):
@@ -799,6 +839,103 @@ def parse_cookie_string(text):
             if name.strip() and value.strip():
                 cookies[name.strip()] = value.strip()
     return cookies
+
+
+# ---------------------------------------------------------------------------
+# 分区：列表缓存 + 把用户写的中文名/拼音/id 解析成唯一的子分区
+# ---------------------------------------------------------------------------
+
+
+def load_area_list(sess, refresh=False):
+    path = _cache_file("areas.json")
+    if not refresh:
+        cached = _read_json(path) or {}
+        if cached.get("parents") and time.time() - cached.get("fetched_at", 0) < AREA_TTL:
+            return cached["parents"]
+    parents = sess.client.area_list()
+    try:
+        _write_json(path, {"fetched_at": int(time.time()), "parents": parents})
+    except OSError:
+        pass                      # 缓存写不下去不算错，接口已经拿到了
+    return parents
+
+
+def flatten_areas(parents):
+    """父分区数组 → 扁平的子分区列表，只留解析和展示要用的字段。"""
+    areas = []
+    for parent in parents:
+        for area in parent.get("list") or []:
+            areas.append({
+                "id": int(area["id"]),
+                "name": area.get("name") or "",
+                "parent_id": int(parent["id"]),
+                "parent_name": parent.get("name") or "",
+                "pinyin": (area.get("pinyin") or "").lower(),
+                "locked": str(area.get("lock_status") or "0") not in ("0", ""),
+            })
+    return areas
+
+
+def area_label(area):
+    return "%s / %s" % (area["parent_name"], area["name"])
+
+
+def _candidates(areas):
+    return [{"id": a["id"], "name": area_label(a)} for a in areas]
+
+
+def resolve_area(areas, spec):
+    """接受数字 id、子分区名、拼音，或"父分区/子分区"消歧写法。"""
+    spec = str(spec).strip()
+    if not spec:
+        raise ToolError("usage", "分区不能是空的。", hint="用 areas 查有哪些分区。")
+
+    if spec.isdigit():
+        for area in areas:
+            if area["id"] == int(spec):
+                return area
+        raise ToolError("usage", "没有 id 为 %s 的分区。" % spec,
+                        hint="用 areas --search 关键词 查正确的分区 id。")
+
+    parent_hint, needle = None, spec.lower()
+    if "/" in spec:
+        head, tail = spec.split("/", 1)
+        parent_hint, needle = head.strip().lower(), tail.strip().lower()
+    if not needle:
+        raise ToolError("usage", "分区写法看不懂：%s" % spec,
+                        hint='要么给 id，要么给"父分区/子分区"或直接给子分区名。')
+
+    pool = areas
+    if parent_hint:
+        pool = [a for a in pool if parent_hint in a["parent_name"].lower()]
+        if not pool:
+            raise ToolError("usage", "没有叫「%s」的父分区。" % spec.split("/", 1)[0].strip(),
+                            hint="用 areas 看父分区列表。")
+
+    exact = [a for a in pool if needle in (a["name"].lower(), a["pinyin"])]
+    matches = exact or [a for a in pool
+                        if needle in a["name"].lower() or needle in a["pinyin"]]
+    if not matches:
+        raise ToolError(
+            "usage",
+            ("父分区「%s」下面没有叫「%s」的分区。" % (pool[0]["parent_name"], needle)
+             if parent_hint else "找不到叫「%s」的分区。" % spec),
+            hint=("用 areas --parent %s 看这个父分区下有哪些。" % pool[0]["parent_name"]
+                  if parent_hint else "用 areas --search 关键词 查一下正确的名字。"))
+    if len(matches) > 1:
+        raise ToolError(
+            "usage", "「%s」匹配到 %d 个分区，说具体点或者直接给 id。" % (spec, len(matches)),
+            hint="候选：" + "、".join("%s(%d)" % (area_label(a), a["id"])
+                                     for a in matches[:8]),
+            detail={"candidates": _candidates(matches[:AREA_LIST_LIMIT])})
+    return matches[0]
+
+
+def check_area_usable(area):
+    if area["locked"]:
+        raise ToolError("usage", "分区「%s」当前被 B 站锁定，不能用。" % area_label(area),
+                        hint="换一个分区，用 areas --search 关键词 找。")
+    return area
 
 
 class Session:
@@ -988,10 +1125,92 @@ def op_status(sess):
         "room_url": "https://live.bilibili.com/%s" % room_id,
         "title": info.get("title"),
         "area": "%s / %s" % (info.get("parent_area_name"), info.get("area_name")),
+        "area_id": info.get("area_id"),
         "live_status": live_status,
         "live_status_text": LIVE_STATUS_TEXT.get(live_status, "未知"),
         "is_live": live_status == 1,
     }
+
+
+def op_areas(sess, search=None, parent=None, refresh=False):
+    """只读，不需要登录：分区列表是公开接口。"""
+    parents = load_area_list(sess, refresh)
+    if not (search or parent):
+        return {
+            "scope": "parents",
+            "count": len(parents),
+            "parents": [{"id": int(p["id"]), "name": p.get("name") or "",
+                         "area_count": len(p.get("list") or [])} for p in parents],
+            "next_step": "再用 areas --parent 父分区 或 areas --search 关键词 查具体子分区。",
+        }
+
+    pool = flatten_areas(parents)
+    if parent:
+        key = str(parent).strip().lower()
+        if key.isdigit():
+            pool = [a for a in pool if a["parent_id"] == int(key)]
+        else:
+            pool = [a for a in pool if key in a["parent_name"].lower()]
+        if not pool:
+            raise ToolError("usage", "没有叫「%s」的父分区。" % parent,
+                            hint="不带参数跑一次 areas 看父分区列表。")
+    if search:
+        key = str(search).strip().lower()
+        pool = [a for a in pool if key in a["name"].lower() or key in a["pinyin"]
+                or key in a["parent_name"].lower()]
+
+    shown = pool[:AREA_LIST_LIMIT]
+    result = {
+        "scope": "areas",
+        "search": search,
+        "parent": parent,
+        "count": len(pool),
+        "areas": [{"id": a["id"], "name": a["name"], "parent_name": a["parent_name"],
+                   "full_name": area_label(a), "pinyin": a["pinyin"],
+                   "locked": a["locked"]} for a in shown],
+    }
+    if len(pool) > len(shown):
+        result["truncated"] = len(pool) - len(shown)
+    if not pool:
+        result["next_step"] = "没匹配上，换个关键词，或者不带参数跑 areas 看父分区。"
+    return result
+
+
+def op_update(sess, title=None, area=None):
+    """改直播间标题 / 分区。在播时改也立刻生效。"""
+    if not title and not area:
+        raise ToolError("usage", "没说要改什么。",
+                        hint="至少给一个 --title 或 --area。")
+    sess.require_login()
+    room_id = sess.room_id()
+    info = sess.client.room_info(room_id)
+    previous = {
+        "title": info.get("title"),
+        "area": "%s / %s" % (info.get("parent_area_name"), info.get("area_name")),
+        "area_id": info.get("area_id"),
+    }
+
+    # 先把分区名解析掉再动直播间：名字写错就不该留下改了一半的状态
+    new_area = (check_area_usable(resolve_area(flatten_areas(load_area_list(sess)), area))
+                if area else None)
+    sess.client.update_room(room_id, title=title,
+                            area_id=new_area["id"] if new_area else None)
+    changed = ([] if not title else ["title"]) + ([] if not new_area else ["area"])
+
+    live_status = int(info.get("live_status", 0))
+    result = {
+        "room_id": room_id,
+        "room_url": "https://live.bilibili.com/%s" % room_id,
+        "title": title or previous["title"],
+        "area": area_label(new_area) if new_area else previous["area"],
+        "area_id": new_area["id"] if new_area else previous["area_id"],
+        "changed": changed,
+        "previous": previous,
+        "is_live": live_status == 1,
+    }
+    if live_status == 1:
+        result["warning"] = "直播间正在直播中，改动已经对观众生效。"
+    return result
 
 
 def _collect_streams(data):
@@ -1024,20 +1243,30 @@ def _collect_streams(data):
     return streams
 
 
-def op_start(sess, title=None):
+def op_start(sess, title=None, area=None):
     sess.require_login()
     room_id = sess.room_id()
     info = sess.client.room_info(room_id)
     was_live = int(info.get("live_status", 0)) == 1
 
+    # 先把分区解析出来再动直播间：名字打错就不该留下改了一半的状态
+    chosen = (check_area_usable(resolve_area(flatten_areas(load_area_list(sess)), area))
+              if area else None)
+
+    if title or chosen:
+        sess.client.update_room(room_id, title=title,
+                                area_id=chosen["id"] if chosen else None)
     if title:
-        sess.client.update_title(room_id, title)
         info["title"] = title
+    if chosen:
+        info["area_id"] = chosen["id"]
+        info["area_name"] = chosen["name"]
+        info["parent_area_name"] = chosen["parent_name"]
 
     area_v2 = info.get("area_id")
     if not area_v2:
         raise ToolError("usage", "直播间没有设置分区，无法开播。",
-                        hint="让用户先在哔哩哔哩网页或 App 里给直播间选一个分区。")
+                        hint="加 --area 分区名开播，或用 update --area 先设一个。")
 
     version = sess.client.live_version()
     response = sess.client.start_live(room_id, area_v2,
@@ -1070,6 +1299,7 @@ def op_start(sess, title=None):
         "room_url": "https://live.bilibili.com/%s" % room_id,
         "title": info.get("title"),
         "area": "%s / %s" % (info.get("parent_area_name"), info.get("area_name")),
+        "area_id": area_v2,
         "was_live": was_live,
         "streams": streams,
     }
@@ -1102,11 +1332,12 @@ def render_md(command, data):
         lines.append("%s · 直播间 %s · %s"
                      % (data["live_status_text"], data["room_id"], data["username"]))
         lines.append("标题：%s" % data["title"])
-        lines.append("分区：%s" % data["area"])
+        lines.append("分区：%s（id %s）" % (data["area"], data.get("area_id", "-")))
     elif command == "start":
         lines.append("%s · 直播间 %s · %s"
                      % ("此前已在直播中" if data["was_live"] else "已开播，直播间对外可见",
                         data["room_id"], data["title"]))
+        lines.append("分区：%s" % data["area"])
         lines.append("")
         lines.append("服务器 %s" % data.get("server", "-"))
         lines.append("推流码 %s" % data.get("stream_key", "-"))
@@ -1115,6 +1346,37 @@ def render_md(command, data):
         if extra:
             lines.append("")
             lines.append("另有 %d 条备用线路，加 --json 可见" % extra)
+    elif command == "update":
+        changed = data["changed"]
+        lines.append("%s · 直播间 %s"
+                     % ("已更新" + "、".join(
+                            {"title": "标题", "area": "分区"}[c] for c in changed),
+                        data["room_id"]))
+        lines.append("标题：%s%s" % (data["title"],
+                                    "（原：%s）" % data["previous"]["title"]
+                                    if "title" in changed else ""))
+        lines.append("分区：%s（id %s%s）"
+                     % (data["area"], data["area_id"],
+                        "，原 %s" % data["previous"]["area"] if "area" in changed else ""))
+        if data.get("warning"):
+            lines.append(data["warning"])
+    elif command == "areas":
+        if data["scope"] == "parents":
+            lines.append("父分区 %d 个（id  名称  子分区数）：" % data["count"])
+            lines.extend("%-6s %s（%d）" % (p["id"], p["name"], p["area_count"])
+                         for p in data["parents"])
+        else:
+            scope = "、".join(filter(None, [
+                "父分区 %s" % data["parent"] if data["parent"] else None,
+                "关键词 %s" % data["search"] if data["search"] else None]))
+            lines.append("匹配 %d 个子分区（%s）：" % (data["count"], scope))
+            lines.extend("%-6s %s%s" % (a["id"], a["full_name"],
+                                        "  [已锁定]" if a["locked"] else "")
+                         for a in data["areas"])
+        if data.get("truncated"):
+            lines.append("……还有 %d 个没列出来，缩小关键词或加 --json。" % data["truncated"])
+        if data.get("next_step"):
+            lines.append(data["next_step"])
     elif command == "stop":
         lines.append("已下播 · 直播间 %s" % data["room_id"])
     elif command == "login":
@@ -1176,14 +1438,19 @@ def main(argv=None):
 
     parser = argparse.ArgumentParser(
         prog=prog(), parents=[common],
-        description="哔哩哔哩直播推流码获取 —— 登录 / 状态 / 开播 / 下播",
+        description="哔哩哔哩直播控制 —— 登录 / 状态 / 分区 / 改标题分区 / 开播 / 下播",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
-  %(prog)s login     登录，调两次：先出二维码图片，用户扫完后再调一次
-  %(prog)s status    直播间状态（只读）
-  %(prog)s start     开播，返回推流地址与推流码（直播间会对外可见）
-  %(prog)s stop      下播
-  %(prog)s logout    登出
+  %(prog)s login                      登录，调两次：先出二维码图片，用户扫完后再调一次
+  %(prog)s status                     直播间状态（只读）
+  %(prog)s areas                      列父分区（只读，不用登录）
+  %(prog)s areas --search 虚拟         在子分区里搜关键词
+  %(prog)s areas --parent 网游         列某个父分区下的子分区
+  %(prog)s update --title "新标题"     改直播标题
+  %(prog)s update --area 虚拟日常      改分区（名字、拼音或 id 都行）
+  %(prog)s start --title X --area Y   开播，顺手改标题和分区（直播间会对外可见）
+  %(prog)s stop                       下播
+  %(prog)s logout                     登出
 
 默认输出精简纯文本摘要；要完整结构化数据加 --json。
 """)
@@ -1195,11 +1462,29 @@ def main(argv=None):
     login.add_argument("--wait", type=int, default=0,
                        help="阻塞等待用户扫码的秒数（默认 0，即不等待、立刻返回）")
     subparsers.add_parser("logout", parents=[common], help="登出，删除本地凭据")
-    subparsers.add_parser("status", parents=[common], help="直播间状态")
+    subparsers.add_parser("status", parents=[common], help="直播间状态（只读）")
+
+    areas = subparsers.add_parser("areas", parents=[common],
+                                  help="查分区（只读，不需要登录）")
+    areas.add_argument("--search", metavar="关键词",
+                       help="在子分区的名字、拼音和父分区名里搜")
+    areas.add_argument("--parent", metavar="父分区",
+                       help="只列这个父分区（名字或 id）下的子分区")
+    areas.add_argument("--refresh", action="store_true",
+                       help="忽略本地缓存，重新拉一次分区列表")
+
+    update = subparsers.add_parser("update", parents=[common],
+                                   help="改直播标题 / 分区（在播时立刻对观众生效）")
+    update.add_argument("--title", help="新的直播标题")
+    update.add_argument("--area", metavar="分区",
+                        help='新的分区：id、名字、拼音或"父分区/子分区"')
+
     start = subparsers.add_parser("start", parents=[common],
-                                  help="开播并返回推流地址与推流码")
-    start.add_argument("--title", help="开播前把直播间标题改成这个")
+                                  help="开播并返回推流地址与推流码（★ 直播间立刻对外可见）")
+    start.add_argument("--title", help="开播前把直播标题改成这个")
+    start.add_argument("--area", metavar="分区", help="开播前把分区改成这个")
     subparsers.add_parser("stop", parents=[common], help="下播")
+    update.epilog = "标题和分区一起给是一次请求；分开连着调会被 B 站限流。"
 
     args = parser.parse_args(argv)
     for name, default in (("as_json", False), ("verbose", False)):
@@ -1217,8 +1502,12 @@ def main(argv=None):
             data = op_logout(sess)
         elif args.command == "status":
             data = op_status(sess)
+        elif args.command == "areas":
+            data = op_areas(sess, args.search, args.parent, args.refresh)
+        elif args.command == "update":
+            data = op_update(sess, args.title, args.area)
         elif args.command == "start":
-            data = op_start(sess, args.title)
+            data = op_start(sess, args.title, args.area)
         else:
             data = op_stop(sess)
     except ToolError as exc:
