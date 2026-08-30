@@ -193,6 +193,9 @@ pub(crate) struct MessageActivityState {
     pub(crate) total_messages: u64,
     pub(crate) sender_messages: HashMap<String, u64>,
     pub(crate) seen_messages: HashMap<String, SeenMessage>,
+    /// 会话里最后一条消息是不是机器人自己发的。入站消息把它清掉,投递成功
+    /// 把它立起来——只看"最后一条",不计数,所以不需要清理策略。
+    pub(crate) last_message_is_own: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -246,6 +249,7 @@ impl MessageActivityHandle {
             }
         }
         state.total_messages = state.total_messages.saturating_add(1);
+        state.last_message_is_own = false;
         let total_messages = state.total_messages;
         let sender_messages = {
             // 与 seen_messages 同款兜底:常驻 daemon 里陌生发送者只增不减。
@@ -279,6 +283,17 @@ impl MessageActivityHandle {
             );
         }
         (position, received_at)
+    }
+
+    /// 投递成功后登记:此刻会话里最后一条是自己发的。
+    pub(crate) fn record_own_message(&self) {
+        self.0.state.lock().unwrap().last_message_is_own = true;
+    }
+
+    /// 会话里最后一条是不是自己发的。连发时用它兜住引用——见
+    /// `AdaptiveResponseTargetPolicy::resolve`。
+    pub(crate) fn last_message_is_own(&self) -> bool {
+        self.0.state.lock().unwrap().last_message_is_own
     }
 
     pub(crate) fn position_for(&self, sender_id: &str) -> PlatformMessagePosition {

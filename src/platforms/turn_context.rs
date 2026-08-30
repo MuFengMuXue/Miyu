@@ -457,9 +457,20 @@ impl PlatformTurnContext {
                 .message_activity
                 .as_ref()
                 .map(|activity| activity.position_for(&target.target.user_id));
+            let last_message_is_own = self
+                .message_activity
+                .as_ref()
+                .is_some_and(|activity| activity.last_message_is_own());
             let resolved = target
                 .policy
-                .and_then(|policy| policy.resolve(target.target.clone(), current, Instant::now()))
+                .and_then(|policy| {
+                    policy.resolve(
+                        target.target.clone(),
+                        current,
+                        last_message_is_own,
+                        Instant::now(),
+                    )
+                })
                 .or_else(|| target.policy.is_none().then(|| target.target.clone()));
             apply_resolved_response_target(
                 &mut prepared.primary,
@@ -522,6 +533,11 @@ impl PlatformTurnContext {
             }
         };
         self.record_delivered_images(&receipt);
+        // 投递成功 = 此刻会话里最后一条是她自己的。下一条回复据此决定要不要
+        // 引用(连发时艾特和引用会一起哑火,见 AdaptiveResponseTargetPolicy)。
+        if let Some(activity) = self.message_activity.as_ref() {
+            activity.record_own_message();
+        }
         self.plugins
             .after_send(self, &delivered_message, &receipt)
             .await;

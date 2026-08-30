@@ -34,10 +34,17 @@ impl AdaptiveResponseTargetPolicy {
         }
     }
 
+    /// `last_message_is_own`:会话里最后一条是不是她自己刚发的。
+    ///
+    /// 08-29 用户点名:连发时两条定向线索会一起哑火。艾特要"隔了时间**且**
+    /// 别人说过话",引用要"隔了几条别人的消息";她回完 A 立刻回 B,B 那条
+    /// 两个条件都不满足,于是既不引用也不艾特——而上一条还是她自己的,读的
+    /// 人分不清她在跟谁说话。真人在群里连着说话也会靠引用分流。
     pub(crate) fn resolve(
         self,
         mut target: ResponseTarget,
         current: Option<PlatformMessagePosition>,
+        last_message_is_own: bool,
         now: Instant,
     ) -> Option<ResponseTarget> {
         let other_messages = self.position.zip(current).map(|(start, current)| {
@@ -48,7 +55,8 @@ impl AdaptiveResponseTargetPolicy {
             total.saturating_sub(same_sender)
         });
         if target.quote {
-            target.quote = self.quote_after_other_messages == 0
+            target.quote = last_message_is_own
+                || self.quote_after_other_messages == 0
                 || other_messages.is_some_and(|count| count >= self.quote_after_other_messages);
         }
         if target.mention {

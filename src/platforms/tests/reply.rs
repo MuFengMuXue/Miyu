@@ -198,6 +198,7 @@ fn adaptive_response_target_uses_independent_inclusive_boundaries() {
             total_messages: 15,
             sender_messages: 3,
         }),
+        false,
         now + Duration::from_secs(14),
     );
     assert!(before_both.is_none());
@@ -209,6 +210,7 @@ fn adaptive_response_target_uses_independent_inclusive_boundaries() {
                 total_messages: 15,
                 sender_messages: 2,
             }),
+            false,
             now + Duration::from_secs(14),
         )
         .unwrap();
@@ -222,6 +224,7 @@ fn adaptive_response_target_uses_independent_inclusive_boundaries() {
                 total_messages: 15,
                 sender_messages: 3,
             }),
+            false,
             now + Duration::from_secs(15),
         )
         .unwrap();
@@ -235,6 +238,7 @@ fn adaptive_response_target_uses_independent_inclusive_boundaries() {
                 total_messages: 15,
                 sender_messages: 2,
             }),
+            false,
             now + Duration::from_secs(15),
         )
         .unwrap();
@@ -295,6 +299,7 @@ fn adaptive_response_target_mention_uses_known_message_activity() {
             .resolve(
                 target.clone(),
                 current,
+                false,
                 now + Duration::from_secs(elapsed_seconds),
             )
             .is_some_and(|target| target.mention);
@@ -721,4 +726,39 @@ fn live_turn_guard_scopes_the_platform_context() {
     );
     drop(newer);
     assert!(live_turn_context("sess-live").is_none());
+}
+
+/// 连发时要靠引用分流。艾特要求"隔了时间**且**别人说过话",引用要求
+/// "隔了几条别人的消息";她回完 A 立刻回 B,两个条件都不满足,于是两条
+/// 定向线索一起哑火——而上一条还是她自己的,读的人分不清她在跟谁说话
+/// (08-29 用户点名)。最后一条是自己发的时,引用无条件成立。
+#[test]
+fn a_reply_right_after_my_own_message_still_quotes() {
+    let now = Instant::now();
+    let start = PlatformMessagePosition {
+        total_messages: 10,
+        sender_messages: 2,
+    };
+    let target = ResponseTarget {
+        message_id: "message-1".to_string(),
+        user_id: "alice".to_string(),
+        quote: true,
+        mention: true,
+        explicit_mention_user_ids: Vec::new(),
+    };
+    // 阈值 5 条,实际一条没隔;时间也没到 → 原本两条线索都会哑火。
+    let policy = AdaptiveResponseTargetPolicy::new(Some(start), now, 5, 15);
+    let current = Some(PlatformMessagePosition {
+        total_messages: 10,
+        sender_messages: 2,
+    });
+
+    let silent = policy.resolve(target.clone(), current, false, now + Duration::from_secs(1));
+    assert!(silent.is_none(), "既不引用也不艾特,这正是要修的现象");
+
+    let after_own = policy
+        .resolve(target, current, true, now + Duration::from_secs(1))
+        .expect("最后一条是自己发的就该引用");
+    assert!(after_own.quote, "应当引用");
+    assert!(!after_own.mention, "艾特的判据不变,不该被顺带打开");
 }
