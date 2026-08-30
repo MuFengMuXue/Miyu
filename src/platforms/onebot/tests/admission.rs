@@ -666,3 +666,34 @@ fn ingress_order_is_strictly_monotonic() {
     let second = next_ingress_order();
     assert!(second > first);
 }
+
+/// 回合在跑时新消息该排队还是该取代当前生成。
+///
+/// 群聊恒排队(覆盖走另一条分支);私聊只在工具执行期排队,否则取代——
+/// 她那时只是在写回复,而 QQ 里一句话拆几条发是常态(08-29 かなき 实录:
+/// 先发文字、三秒后补图,她先答"你没发图"再答对,两条都发出去了)。
+#[test]
+fn a_private_message_supersedes_a_reply_being_written_but_not_a_running_tool() {
+    use crate::runtime::TurnUpdateMode;
+
+    assert_eq!(
+        active_turn_update_mode(false, false),
+        TurnUpdateMode::Supersede,
+        "私聊、没在跑工具:该取代"
+    );
+    assert_eq!(
+        active_turn_update_mode(false, true),
+        TurnUpdateMode::Followup,
+        "私聊、正在跑工具:别打断"
+    );
+    assert_eq!(
+        active_turn_update_mode(true, false),
+        TurnUpdateMode::Followup,
+        "群聊在这条路上恒排队"
+    );
+    assert_eq!(
+        active_turn_update_mode(true, true),
+        TurnUpdateMode::Followup,
+        "群聊在这条路上恒排队"
+    );
+}

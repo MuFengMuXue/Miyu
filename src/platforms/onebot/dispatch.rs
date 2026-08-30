@@ -86,6 +86,29 @@ pub(in crate::platforms::onebot) async fn handle_message(
     handle_message_with_activity(state, conn, event, ingress_order, activity).await;
 }
 
+/// 回合还在跑时,新消息该排队还是该取代当前生成。
+///
+/// 群聊走的是另一条路(`reserve_tool_followup` 只在工具执行期返回 Some,
+/// 其余落到下面的覆盖分支),所以这里恒为排队。
+///
+/// 私聊的判据与群聊同源:**工具正在跑**说明她在真干活,排队别打断;否则她
+/// 只是在写回复,新消息该取代它。
+///
+/// 08-29 取证:QQ 里一句话拆成几条发是常态。用户先发"这是什么鱼"、三秒后
+/// 补图,回合已经带着"没有图"开跑并写出"你没发图我怎么知道",这句被中间
+/// 消息通道投递了出去,随后消费队列才答对——用户看到的是先装瞎再答题。
+/// 同样两条消息在群里会被覆盖窗口合并。
+pub(in crate::platforms::onebot) fn active_turn_update_mode(
+    is_group: bool,
+    tool_executing: bool,
+) -> TurnUpdateMode {
+    if is_group || tool_executing {
+        TurnUpdateMode::Followup
+    } else {
+        TurnUpdateMode::Supersede
+    }
+}
+
 pub(in crate::platforms::onebot) async fn handle_message_with_activity(
     state: DaemonState,
     conn: ConnectionHandle,
@@ -397,6 +420,29 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                 (run_id, turn_id, followup, reservation)
             })
         };
+        // 私聊里选哪种入队。判据与群聊同源:**工具正在跑**说明她在真干活,
+        // 排队别打断;否则她只是在写回复,新消息该取代它。
+        //
+        // 08-29 取证:QQ 里一句话拆成几条发是常态。用户先发"这是什么鱼"、
+        // 三秒后补图,回合已经带着"没有图"开跑,写出"你没发图我怎么知道",
+        // 这句被中间消息通道投递了出去,随后消费队列才答对——用户看到的是
+        // 先装瞎再答题。同样的两条消息在群里会被覆盖窗口合并,私聊没有,
+        // 因为 follow-up 分支在覆盖分支之前就 return 了。
+        //
+        // Supersede 与 Followup 走同一条入队通道,只多一个 `supersede.trigger()`
+        // (runtime/turn_update.rs:85),agent 收到后丢弃当前生成的正文
+        // (turn_run.rs 的 `generation.superseded` → `text.clear()`),那句半成品
+        // 就不会被 flush 出去。
+        let private_update_mode = active_turn_update_mode(
+            matches!(target, Target::Group { .. }),
+            reserve_tool_followup(
+                &state,
+                session_id,
+                &context.conversation,
+                &context.sender_id,
+            )
+            .is_some(),
+        );
         if let Some((run_id, turn_id, followup, reservation)) = followup_target {
             let _ingress_reservation = reservation;
             let _enqueue_order = followup.lock_enqueue().await;
@@ -437,7 +483,7 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                 session_id,
                 &run_id,
                 &turn_id,
-                TurnUpdateMode::Followup,
+                private_update_mode,
             )
             .await
             {
@@ -446,6 +492,10 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                     session_id,
                     sender_id = user_id,
                     message_id = %inbound_event.message_id,
+                    mode = match private_update_mode {
+                        TurnUpdateMode::Supersede => "supersede",
+                        TurnUpdateMode::Followup => "followup",
+                    },
                     "{}",
                     t("OneBot message queued as a follow-up to the active turn", "OneBot 消息已加入当前回合的后续队列")
                 ),
