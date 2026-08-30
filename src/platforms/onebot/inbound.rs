@@ -841,8 +841,26 @@ pub(in crate::platforms::onebot) fn parse_message_info(
     let conversation_id = data
         .get("group_id")
         .and_then(value_id_string)
-        .or_else(|| data.get("target_id").and_then(value_id_string))
-        .or_else(|| data.get("peer_id").and_then(value_id_string))
+        // 私聊的会话 id 是**对方**,不是自己。`target_id`/`peer_id` 在
+        // user→bot 的消息里指向机器人,原来不过滤就直接采信,于是
+        // `get_msg` 回来的会话 id 成了自己的号,与 `Target::Private` 期望的
+        // 对方号对不上——`adapter.rs` 的归属校验判成"属于另一个会话",
+        // vision_analyze 取历史图必失败(08-30 测具实测,报错原文
+        // "the requested image message belongs to another conversation")。
+        //
+        // 三个来源统一按"不是我"过滤:bot 发出的消息里 target_id 是对方
+        // (保留),user_id 是自己(跳过);用户发来的消息反过来。两个方向都
+        // 落到同一个人身上。
+        .or_else(|| {
+            data.get("target_id")
+                .and_then(value_id_string)
+                .filter(|id| id != &self_id.to_string())
+        })
+        .or_else(|| {
+            data.get("peer_id")
+                .and_then(value_id_string)
+                .filter(|id| id != &self_id.to_string())
+        })
         .or_else(|| {
             data.get("user_id")
                 .and_then(value_id_string)
