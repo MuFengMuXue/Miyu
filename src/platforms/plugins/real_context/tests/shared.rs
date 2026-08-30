@@ -45,6 +45,31 @@ pub(super) fn test_context(
     (temp, context)
 }
 
+/// 私聊版上下文。群聊那份走 real_context 全套,私聊只借用图片引用。
+pub(super) fn private_availability_context(
+    availability: BotSendAvailability,
+) -> (tempfile::TempDir, PlatformTurnContext) {
+    let (temp, context) = availability_context(availability);
+    let mut conversation = context.conversation.clone();
+    conversation.kind = ConversationKind::Private;
+    conversation.conversation_id = "30000".to_string();
+    let mut event = inbound_event();
+    event.conversation = conversation.clone();
+    let rebuilt = PlatformTurnContext::new(
+        conversation,
+        context.sender_id.clone(),
+        context.sender_display_name.clone(),
+        false,
+        context.config.clone(),
+        context.paths.clone(),
+        context.state_store.clone(),
+        context.adapter.clone(),
+        context.plugins.clone(),
+    )
+    .with_inbound_event(event);
+    (temp, rebuilt)
+}
+
 pub(super) fn availability_context(
     availability: BotSendAvailability,
 ) -> (tempfile::TempDir, PlatformTurnContext) {

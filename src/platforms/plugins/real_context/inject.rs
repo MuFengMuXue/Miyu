@@ -575,6 +575,64 @@ impl RealContextPlugin {
         tracing::info!(target: "miyu::qq", "\n{readable}");
     }
 
+    /// 私聊的历史图片引用。只建 id 列表,不注入记录块。
+    ///
+    /// 失败一律静默:拿不到就退回原来的行为(她看不到旧图),不该因为这个
+    /// 让整个回合起不来。
+    async fn inject_private_context_images(
+        &self,
+        context: &PlatformTurnContext,
+        input: &mut PlatformTurnInput,
+    ) {
+        // 必须用 conversation_key:同模块的 group_key 把 kind 写死成 Group
+        // (message_history/mod.rs:401),在私聊里调它查的是"群 <对方QQ号>",
+        // 一条也查不到——08-30 就是这么静默失效的,日志加了 scanned= 才看见。
+        let Ok(key) = crate::platforms::plugins::message_history::conversation_key(context) else {
+            return;
+        };
+        let ingress_order = context
+            .inbound_event()
+            .and_then(|event| event.ingress_order);
+        let page = self
+            .store(context)
+            .recent(
+                RecentQuery::for_context(
+                    key,
+                    context.config.active_persona_scope(),
+                    CONTEXT_IMAGE_LOOKBACK_MESSAGES,
+                )
+                .before_ingress_order(ingress_order),
+            )
+            .await;
+        let Ok(page) = page else {
+            return;
+        };
+        let images = context_image_refs(
+            &page.messages,
+            80_000,
+            context.config.platforms.qq.user_identification,
+            MAX_CONTEXT_IMAGE_REFS,
+        );
+        tracing::info!(
+            target: "miyu::qq",
+            conversation_id = %context.conversation.conversation_id,
+            scanned = page.messages.len(),
+            refs = images.len(),
+            "{}",
+            crate::i18n::text(
+                "private-chat context image refs prepared",
+                "私聊历史图片引用已准备"
+            )
+        );
+        if images.is_empty() {
+            return;
+        }
+        // 同一份也挂到回合上下文上:MCP 桥(claude-code 供应商)另建工具面,
+        // 拿不到 PlatformTurnInput,只能从这里取。
+        context.set_context_images(images.clone());
+        input.context_images = images;
+    }
+
     pub(in crate::platforms::plugins::real_context) async fn inject_context(
         &self,
         context: &PlatformTurnContext,
@@ -582,6 +640,18 @@ impl RealContextPlugin {
         settings: &RealContextPluginSettings,
     ) -> Result<()> {
         if context.conversation.kind != ConversationKind::Group {
+            // 私聊只借用其中一件事:让历史里的图还能被看见。
+            //
+            // 08-29 取证:QQ 的图只内联进当轮请求,从不落库(`turn_user_message`
+            // 读的是 WebUI 专用的 user_attachments 表,QQ 这条路一次没写过)。
+            // 群聊靠 `<context-images>` 兜住——历史图给个 id,要看时
+            // `vision_analyze` 拿 message_id 回平台重新下载。私聊没接这套,于是
+            // "接着上一张图问"直接不成立,她只能说"图片信息我这边刷新掉了"。
+            //
+            // 取回机制本身与群聊无关(`resolve_context_image` 走
+            // message_images_task,按消息 id 拉),私聊照用。这里不注入历史块:
+            // 私聊的上下文由 agent 会话历史承载,不需要群聊那套记录块。
+            self.inject_private_context_images(context, input).await;
             return Ok(());
         }
         // 当前消息排在记录块之后。实测(deepseek-v4-flash,N=32)把它从记录块之前

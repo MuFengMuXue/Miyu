@@ -419,3 +419,65 @@ fn active_target_prompt_merges_only_the_same_sender_and_marks_history_as_backgro
     assert!(!prompt.contains("补充材料不应被单独回复"));
     assert!(prompt.contains("@mentions: yuyi(QQ:8)"));
 }
+
+/// 私聊也要能引用历史里的图。
+///
+/// QQ 的图只内联进当轮请求、从不落库,群聊靠 `<context-images>` 兜住——
+/// 历史图给个 id,要看时 `vision_analyze` 拿 message_id 回平台重新下载。
+/// 私聊原来没接这套,于是"接着上一张图问"直接不成立,她只能说
+/// "图片信息我这边刷新掉了"(08-29 私聊实录)。
+#[tokio::test]
+async fn a_private_turn_can_still_reference_earlier_images() {
+    let (_temp, context) = private_availability_context(BotSendAvailability::Available);
+    let plugin = RealContextPlugin::new();
+    // 必须按真实 kind 记录:生产里 message_history 插件用的就是
+    // `ConversationKey::for_kind(event.conversation.kind, ..)`。第一版这里
+    // 用了 `group_key`,而被测代码当时也用 group_key——两边一样错所以测试
+    // 绿着,线上却一条都查不到(08-30)。
+    let key = crate::platforms::plugins::message_history::conversation_key(&context).unwrap();
+    plugin
+        .store(&context)
+        .record_message(NewHistoryMessage {
+            group: key,
+            message_id: "earlier".to_string(),
+            sender_id: "30000".to_string(),
+            sender_name: "测试用户".to_string(),
+            content: SanitizedContent::new(
+                "看这个",
+                vec![MediaPlaceholder::new(
+                    MediaKind::Image,
+                    None::<String>,
+                    None::<String>,
+                )],
+            ),
+            reply_to_message_id: None,
+            is_bot: false,
+            sent_at: 0,
+            ingress_order: Some(0),
+        })
+        .await
+        .unwrap();
+
+    let mut input = PlatformTurnInput {
+        content: "左边那两个是什么".to_string(),
+        memory_content: "左边那两个是什么".to_string(),
+        system_context: Vec::new(),
+        turn_system_context: Vec::new(),
+        context_images: Vec::new(),
+        context_files: Vec::new(),
+    };
+    plugin
+        .inject_context(&context, &mut input, &RealContextPluginSettings::default())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        input.context_images.len(),
+        1,
+        "私聊拿不到历史图片引用：{:?}",
+        input.context_images
+    );
+    assert_eq!(input.context_images[0].message_id, "earlier");
+    // 私聊不注入群聊那套记录块,上下文由 agent 会话历史承载。
+    assert_eq!(input.content, "左边那两个是什么");
+}

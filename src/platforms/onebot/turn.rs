@@ -554,7 +554,7 @@ pub(in crate::platforms::onebot) async fn build_and_run_turn(
     let mut system_context = vec![
         qq_identity_policy(context.conversation.kind),
         qq_history_format(context.config.platforms.qq.user_identification),
-        "<qq-context-images>A <context-images> block lists IDs of historical group-chat images viewable on demand. You have not seen their content. Call vision_analyze with an ID only when the answer truly depends on the image; never guess image content from placeholders.</qq-context-images>".to_string(),
+        "<qq-context-images>A <context-images> block lists IDs of images sent earlier in this conversation, viewable on demand. You have not seen their content. Call vision_analyze with an ID only when the answer truly depends on the image; never guess image content from placeholders.</qq-context-images>".to_string(),
         // reply_to 语义:被引消息是旧消息、作者是 reply_to 里的人、不是说给
         // 你的话——不解释这三点,模型会把引用内容当成当前对话里别人对它说
         // 的新话(用户 08-20 实测点名)。会话级常量,不掰缓存。

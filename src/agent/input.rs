@@ -248,6 +248,18 @@ impl Agent {
                 list
             )));
         }
+        if !self.context_images.is_empty() && !vision_tool_available {
+            tracing::warn!(
+                target: "miyu::qq",
+                refs = self.context_images.len(),
+                tools_enabled = self.tools_enabled,
+                "{}",
+                crate::i18n::text(
+                    "context image refs are available but vision_analyze is not registered; the block was not emitted",
+                    "有历史图片引用但未注册 vision_analyze,<context-images> 块未发出"
+                )
+            );
+        }
         if !self.context_images.is_empty() && vision_tool_available {
             let ids = self
                 .context_images
