@@ -19,7 +19,7 @@ import base64, json, os, re, socket, struct, sys, threading, time
 HOST, PORT, PATH = "127.0.0.1", 8300, "/ws"
 SELF_ID   = 900000001          # 假机器人账号
 GROUP_ID  = 999000001          # 假群(非白名单)
-SENDER    = 800000001          # 假群友(非管理员)
+SENDER    = 800000043          # 假群友(非管理员)
 OTHER     = 800000002          # 另一个假群友
 
 
@@ -101,6 +101,8 @@ class WS:
 
 
 REPLIES = []
+# 发出去的消息留底,get_msg 要按 id 还原(含图片段)。
+SENT_MESSAGES = {}
 
 
 def api_data(action, params):
@@ -120,8 +122,30 @@ def api_data(action, params):
         return [{"group_id": GROUP_ID, "user_id": u, "nickname": n, "role": "member"}
                 for u, n in ((SENDER, "测试群友"), (OTHER, "另一个群友"))]
     if action == "get_msg":
-        return {"message_id": params.get("message_id"), "message": [],
-                "sender": {"user_id": SENDER, "nickname": "测试群友"}}
+        # 按消息 id 把原样内容还回去。vision_analyze 取历史图就走这条
+        # (adapter.rs:80 message_images → get_msg → 下载图片段),返回空数组
+        # 等于"这条消息没有图",第一版就是这么把整条链路测哑的。
+        mid = params.get("message_id")
+        try:
+            mid = int(mid)
+        except (TypeError, ValueError):
+            pass
+        sent = SENT_MESSAGES.get(mid)
+        if not sent:
+            return {"message_id": mid, "message": [],
+                    "sender": {"user_id": SENDER, "nickname": "测试私聊"}}
+        return {
+            "message_id": mid,
+            "message_type": sent["message_type"],
+            "real_id": mid,
+            "time": sent["time"],
+            "user_id": sent["user_id"],
+            "group_id": sent.get("group_id"),
+            "target_id": sent.get("target_id"),
+            "message": sent["message"],
+            "raw_message": sent.get("raw_message", ""),
+            "sender": {"user_id": sent["user_id"], "nickname": sent["nickname"]},
+        }
     return {}
 
 
@@ -170,6 +194,83 @@ def render(message):
         else:
             parts.append(f"[{t}]")
     return "".join(parts).strip()
+
+
+def private_msg(ws, text, *, image_b64=None, sender=SENDER, name="测试私聊"):
+    """私聊消息。image_b64 非空时附一段 base64 图片段(OneBot 的 file 支持
+    base64:// 前缀,见 inbound.rs:318)。"""
+    segments = []
+    if text:
+        segments.append({"type": "text", "data": {"text": text}})
+    if image_b64:
+        segments.append({"type": "image", "data": {"file": f"base64://{image_b64}"}})
+    mid = int(time.time() * 1000) % 2**31
+    now = int(time.time())
+    SENT_MESSAGES[mid] = {"message_type": "private", "user_id": sender,
+                          "target_id": SELF_ID, "message": segments,
+                          "raw_message": text, "nickname": name, "time": now}
+    ws.send({
+        "post_type": "message", "message_type": "private", "sub_type": "friend",
+        "self_id": SELF_ID, "user_id": sender, "message_id": mid,
+        "raw_message": text, "message": segments, "font": 0, "time": now,
+        "sender": {"user_id": sender, "nickname": name},
+    })
+    return mid
+
+
+def make_png(width=240, height=160, rgb=(220, 40, 60), band=(30, 90, 200)):
+    """现造一张纯 PNG(zlib+struct,不依赖 Pillow)。
+
+    上半纯色、下半另一色,右下角画个方块——追问"右下角是什么颜色"时有确定
+    答案,能区分"真看到了"和"编的"。1×1 的图不行:模型看不清也会随口给个
+    颜色,测出来的是幻觉不是能力。
+    """
+    import struct, zlib
+
+    rows = []
+    for y in range(height):
+        row = bytearray([0])  # filter type 0
+        for x in range(width):
+            if y > height * 0.6 and x > width * 0.7:
+                color = (250, 230, 40)          # 右下角方块:黄
+            elif y > height * 0.5:
+                color = band
+            else:
+                color = rgb
+            row.extend(color)
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+
+    def chunk(tag, payload):
+        body = tag + payload
+        return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body))
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(raw, 6))
+    png += chunk(b"IEND", b"")
+    return base64.b64encode(png).decode()
+
+
+TINY_PNG = make_png()
+
+
+def private_image_probe(ws, keep: float):
+    """私聊的图片跨轮引用:先发图并等她答,再不带图追问同一张。"""
+    print("\n=== 私聊:发图 ===")
+    before = len(REPLIES)
+    private_msg(ws, "看看这张图上半部分是什么颜色", image_b64=TINY_PNG)
+    waited = 0.0
+    while waited < keep and len(REPLIES) == before:
+        time.sleep(0.5); waited += 0.5
+    time.sleep(3)
+
+    print("\n=== 私聊:不带图追问上一张 ===")
+    before = len(REPLIES)
+    private_msg(ws, "那张图右下角那个方块是什么颜色")
+    waited = 0.0
+    while waited < keep and len(REPLIES) == before:
+        time.sleep(0.5); waited += 0.5
 
 
 def group_msg(ws, text, *, sender=SENDER, at_self=False, name="测试群友"):
@@ -246,6 +347,9 @@ def main():
     ws.send({"post_type": "meta_event", "meta_event_type": "lifecycle",
              "sub_type": "connect", "self_id": SELF_ID, "time": int(time.time())})
     time.sleep(1)
+    if "--private" in sys.argv:
+        private_image_probe(ws, keep=90)
+        return
     if "--probe" in sys.argv:
         idx = sys.argv.index("--probe")
         rounds = int(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else 30
