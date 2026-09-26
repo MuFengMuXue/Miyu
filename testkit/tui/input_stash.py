@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Ctrl+S 暂存输入框（用户 09-26，照 Claude Code 的 stash）。
 
-输入框里写了一半，想先跑一条命令：Ctrl+S 存起来、清空，顶行右边挂一个暗色的 `> stashed`；
+输入框里写了一半，想先跑一条命令：Ctrl+S 存起来、清空，顶行右边挂一个暗色的「> 暂存」（英文界面
+`> stashed`）；
 干完别的再按一次，草稿原样回来，标记消失。
 
     cargo build
@@ -9,7 +10,7 @@
 
 判定：
   stash_clears_the_box     按下去草稿从输入框里消失
-  stash_mark_shown         顶行右边出现 `> stashed`
+  stash_mark_shown         顶行右边出现「> 暂存」（中文界面）
   mark_survives_a_turn     中间发一句话、这一轮跑完，标记还在
   second_press_restores    再按一次，草稿回到输入框
   mark_gone_after_restore  取回之后标记没了
@@ -28,7 +29,8 @@ import run as h  # noqa: E402
 import round26 as r  # noqa: E402
 
 DRAFT = "写了一半的草稿 TKDRAFT"
-MARK = "> stashed"
+# 走查钉中文界面（LANG=zh_CN），标记跟界面语言走。
+MARK = "> 暂存"
 CTRL_S = b"\x13"
 
 

@@ -1026,11 +1026,11 @@ pub(in crate::cli) fn render_repl_input_with_footer(
             right_edge = cols.saturating_sub(hint_width).saturating_sub(2);
         }
     }
-    // Ctrl+S 存着东西（09-26，照 Claude Code）：同一行右端挂一个暗色的 `> stashed`，
-    // 提醒输入框清空了但东西还在，再按一次取回。
+    // Ctrl+S 存着东西（09-26，照 Claude Code）：同一行右端挂一个暗色的「> 暂存」，
+    // 提醒输入框清空了但东西还在，再按一次取回。跟界面语言走（用户 09-27：中文界面写中文）。
     if badges.stashed {
-        const STASH_MARK: &str = "> stashed";
-        let mark_width = visible_width(STASH_MARK);
+        let stash_mark = t("> stashed", "> 暂存");
+        let mark_width = visible_width(stash_mark);
         if right_edge > prefix_width.saturating_add(mark_width).saturating_add(2) {
             let column = u16::try_from(right_edge.saturating_sub(mark_width))
                 .unwrap_or(u16::MAX)
@@ -1038,7 +1038,7 @@ pub(in crate::cli) fn render_repl_input_with_footer(
             queue!(
                 stdout,
                 MoveTo(column, *input_row),
-                Print(format!("\x1b[2m\x1b[38;5;245m{STASH_MARK}\x1b[0m"))
+                Print(format!("\x1b[2m\x1b[38;5;245m{stash_mark}\x1b[0m"))
             )?;
         }
     }
