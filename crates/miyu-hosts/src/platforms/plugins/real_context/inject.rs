@@ -455,7 +455,14 @@ impl RealContextPlugin {
                 0.0
             }
         };
-        let answer_in_progress = context.answer_in_progress();
+        // 这条顶掉了同一个人还没判完的上一条(inherited):上一条就由它来答,没有哪个在途的回答
+        // 覆盖得了——不挂「正在回答」,也就不会被当成催促判掉,两条一起没人答(09-26 实测时想到的
+        // 边角:那个人更早的一条恰好还在回答中)。
+        let answer_in_progress = if inherited {
+            None
+        } else {
+            context.answer_in_progress()
+        };
         let judged = tokio::select! {
             biased;
             _ = wait_for_supersede(&mut cancel_rx) => {

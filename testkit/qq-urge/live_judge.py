@@ -2,7 +2,7 @@
 """真判官看一眼（09-26）：她回得慢时对方追问，真模型判官会不会只在该回的时候回。
 
 主对话是 stub.py 的慢回答，判官走你配置里的 Lite 档（和线上一样）。每一轮：问一句（LQn），第 10 秒
-发一种追问，等答案发出去再等 10 秒，看有没有另起一轮回追问。要真模型、会花一点钱，不进红绿账：
+发一种追问，等答案发出去再等 10 秒：催促 / 重复要整轮只回一条，新问题要有冲它回的一条。要真模型、会花一点钱，不进红绿账：
 
     BIN=<miyu> python3 testkit/qq-urge/live_judge.py [--rounds 3]
 """
@@ -34,9 +34,11 @@ spec = importlib.util.spec_from_file_location("fake", REPO / "testkit" / "fake-o
 fake = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fake)
 ADMIN, MEMBER = 810000001, 810000002
-# (追问原文, 期望): 只催 / 原样重复 → 不该单独回；补了新问题 → 该回。
-VARIANTS = [("??", False), ("人呢", False), ("帮我看看 rime 在 windows 上怎么装啊", False),
-            ("另外 macOS 上能用吗", True)]
+# 每一轮问一个不同的东西：同一句问题反复问，判官会（正当地）把后面几次原问题本身判成重复、不回，
+# 测的就不是追问了（09-26 实测）。追问按种类：只催 / 原样重复 → 整轮只回一条；补了新问题 → 要回它。
+TOPICS = ["rime", "fcitx5", "kitty", "neovim", "docker", "obs", "steam", "wine", "flatpak", "pipewire",
+          "zsh", "tmux", "hyprland", "waybar", "mpv", "yazi"]
+VARIANTS = [("??", False), ("人呢", False), ("{question}啊", False), ("另外 {topic} 在 macOS 上能用吗", True)]
 
 
 def free_port():
@@ -131,20 +133,27 @@ def main():
             for text, expect_reply in VARIANTS:
                 if args.only and text != args.only:
                     continue
+                topic = TOPICS[n % len(TOPICS)]
                 n += 1
-                VARIANT.write_text(text, encoding="utf-8")
+                question = f"帮我看看 {topic} 在 arch 上怎么装"
+                follow = text.format(question=question, topic=topic)
+                VARIANT.write_text(follow, encoding="utf-8")
                 mark = len(SENDS)
                 start = time.time()
-                fake.group_msg(ws, f"LQ{n} 帮我看看 rime 在 windows 上怎么装", sender=MEMBER, at_self=True, name="催催")
+                fake.group_msg(ws, f"LQ{n} {question}", sender=MEMBER, at_self=True, name="催催")
                 time.sleep(max(0, start + 10 - time.time()))
-                fake.group_msg(ws, text, sender=MEMBER, at_self=True, name="催催")
+                fake.group_msg(ws, follow, sender=MEMBER, at_self=True, name="催催")
                 wait_for(lambda: any("A-DONE" in s for s in SENDS[mark:]), 60)
                 wait_for(lambda: any("SECOND-REPLY" in s for s in SENDS[mark:]), 12)
-                replied = any("SECOND-REPLY" in s for s in SENDS[mark:])
-                ok = replied == expect_reply
+                cycle = SENDS[mark:]
+                replied = any("SECOND-REPLY" in s for s in cycle)
+                # 催促 / 重复：这一轮一共只回一条就对——追问赶上原问题还在过判官时，会取消那次判断、
+                # 两条并成一轮只回一次（这时唯一那条是冲追问回的）。新问题：得有冲它回的那一条。
+                ok = replied if expect_reply else len(cycle) == 1
                 tally.setdefault(text, []).append(ok)
-                print(f"{'✅' if ok else '❌'} 第{round_index + 1}轮 「{text}」 {'又回了一条' if replied else '没再回'}"
-                      f"（期望{'回' if expect_reply else '不回'}）", flush=True)
+                print(f"{'✅' if ok else '❌'} 第{round_index + 1}轮 LQ{n} 「{follow}」 这一轮回了 {len(cycle)} 条"
+                      f"{'，含冲追问的' if replied else ''}（期望{'冲追问回一条' if expect_reply else '只回一条'}）",
+                      flush=True)
                 time.sleep(3)
     finally:
         daemon.terminate()
@@ -158,13 +167,15 @@ def main():
         p.read_text(errors="replace") for p in (HOME / "cache" / "logs").glob("miyu.*.log"))
     reasons = re.findall(r"正在回答：([^\n]+)", logs)
     print("\n决策日志里「正在回答」那一行:", len(reasons), "次；其中判成催促不回的", sum("不单独回" in r for r in reasons), "次")
-    # 每条追问的判官理由（群聊记录里的原话只截短）。
+    # 按顺序列出每一次判断（群聊记录里的原话只截短）：失败的那一轮直接看得到原因。
     for block in re.findall(r"【主动回复判断：[^】]+】(?:\n[^\n【]*){0,20}", logs):
-        if "正在回答" in block:
-            verdict = re.search(r"【主动回复判断：([^】]+)】", block).group(1)
-            message = (re.search(r"消息：([^\n]*)", block) or [None, ""])[1][:30]
-            reason = (re.search(r"判断理由：([^\n]*)", block) or [None, ""])[1][:160]
-            print(f"  [{verdict}] {message} | {reason}")
+        verdict = re.search(r"【主动回复判断：([^】]+)】", block).group(1)
+        message = (re.search(r"消息：([^\n]*)", block) or [None, ""])[1][:26]
+        busy = "在忙" if "正在回答" in block else "    "
+        reason = (re.search(r"判断理由：([^\n]*)", block) or [None, ""])[1][:110]
+        print(f"  [{verdict}] {busy} {message} | {reason}")
+    for line in re.findall(r"[^\n]*(?:已被限流|跳过判断的原因|判断失败|覆盖)[^\n]*", logs)[:10]:
+        print("  ", line[:150])
     print("汇总:", {text: f"{sum(v)}/{len(v)}" for text, v in tally.items()})
 
 
