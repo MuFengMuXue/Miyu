@@ -1152,3 +1152,51 @@ fn tab_and_shift_tab_split_lane_switch_and_read_only() {
     assert!(!is_readonly(&complete), "斜杠命令照旧补全");
     assert_eq!(session.input, "/sandbox");
 }
+
+/// Ctrl+S 暂存（用户 09-26，照 Claude Code 的 stash）：写了一半想先跑一条命令时，有字就存起来、
+/// 清空；空着就取回；两边都有就互换，哪一份都不丢。发出去一条消息也不会把存着的弄丢。
+#[test]
+fn ctrl_s_stashes_the_draft_and_brings_it_back() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = pop_test_paths(temp.path());
+    let ctrl_s = || Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+    let mut editor = LiveReplEditor::new(PersonaLane::Active, Vec::new());
+
+    // 空着、也没存东西：按了什么都不变。
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    assert!(editor.input.is_empty() && editor.stashed.is_none());
+
+    editor.input = "写了一半的草稿".to_string();
+    editor.cursor = 3;
+    editor.pasted_images = vec![None];
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    assert!(editor.input.is_empty(), "存起来之后输入框该空了");
+    assert!(
+        editor.pasted_images.is_empty(),
+        "粘贴的图片跟着草稿一起存走"
+    );
+    assert!(editor.stashed.is_some());
+
+    // 先跑一条命令：发出去之后存着的还在。
+    editor.input = "/help".to_string();
+    editor.cursor = 5;
+    let _ = editor.submit();
+    assert!(editor.stashed.is_some(), "发了一条消息，存着的不能丢");
+
+    // 空着：取回来，光标和粘贴的载荷都和存进去时一样。
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    assert_eq!(editor.input, "写了一半的草稿");
+    assert_eq!(editor.cursor, 3);
+    assert_eq!(editor.pasted_images.len(), 1);
+    assert!(editor.stashed.is_none());
+
+    // 两边都有：互换。
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    editor.input = "另一段".to_string();
+    editor.cursor = 3;
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    assert_eq!(editor.input, "写了一半的草稿");
+    editor.clear();
+    editor.handle_event(ctrl_s(), &paths, false).unwrap();
+    assert_eq!(editor.input, "另一段");
+}

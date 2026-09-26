@@ -600,9 +600,8 @@ fn the_footer_says_how_deep_into_subagent_sessions_we_are() {
     };
     let badge = |depth: usize| format!("{} ↳{depth}", text("subagent", "子代理"));
     let visiting = |depth| FooterBadges {
-        readonly: false,
         visit_depth: depth,
-        cache_breaks: 0,
+        ..FooterBadges::default()
     };
 
     assert!(!left(FooterBadges::default(), 120).contains('↳'));
@@ -611,7 +610,7 @@ fn the_footer_says_how_deep_into_subagent_sessions_we_are() {
         FooterBadges {
             readonly: true,
             visit_depth: 2,
-            cache_breaks: 0,
+            ..FooterBadges::default()
         },
         120,
     );
