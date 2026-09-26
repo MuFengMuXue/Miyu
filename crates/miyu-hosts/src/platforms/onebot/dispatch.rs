@@ -625,6 +625,25 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                 .available(key, admission.rate_limit)
         });
         context.set_reply_rate_available(rate_available);
+        // 她还在回答这个人前面那条时，判官要知道（用户 09-26）：群聊记录里只有发出去的消息，
+        // 不告诉它的话，这段时间里的「??」「人呢」会被判成新的一问、排成下一轮，答案发出去
+        // 之后又回一遍追问。
+        if let (Target::Group { .. }, Some(session_id)) = (target, session_id.as_deref()) {
+            context.set_answer_in_progress(
+                platform_update_target(
+                    &state,
+                    session_id,
+                    &context.conversation,
+                    &context.sender_id,
+                )
+                .and_then(|(_, _, followup)| {
+                    followup
+                        .context
+                        .inbound_event()
+                        .map(|event| event.message_id.clone())
+                }),
+            );
+        }
         context.observe_inbound(&inbound_event).await;
         context.decide_trigger(&inbound_event, &mut trigger).await;
         if !trigger.should_reply {

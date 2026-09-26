@@ -1243,6 +1243,14 @@
       "lane": "qq-relay"
     },
     {
+      "name": "qq_urge",
+      "argv": [
+        "python3",
+        "testkit/qq-urge/run.py"
+      ],
+      "lane": "qq-relay"
+    },
+    {
       "name": "qq_sleep",
       "argv": [
         "python3",

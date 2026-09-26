@@ -455,6 +455,7 @@ impl RealContextPlugin {
                 0.0
             }
         };
+        let answer_in_progress = context.answer_in_progress();
         let judged = tokio::select! {
             biased;
             _ = wait_for_supersede(&mut cancel_rx) => {
@@ -477,6 +478,7 @@ impl RealContextPlugin {
                     affection_prompt,
                     affection_bias,
                     emotion_adjustment,
+                    answer_in_progress: answer_in_progress.as_deref(),
                 },
             ) => judged,
         };
@@ -547,6 +549,8 @@ impl RealContextPlugin {
                 moderation: &judged.moderation,
                 reason: &judged.reasoning,
                 endpoint: judged.endpoint.as_deref(),
+                answer_in_progress: answer_in_progress.as_deref(),
+                covered_by_pending_answer: judged.covered_by_pending_answer,
             });
             tracing::info!(target: "miyu::qq", "\n{readable}");
         }

@@ -33,6 +33,10 @@ pub(in crate::platforms::plugins::real_context) struct ActiveReplyDecisionLog<'a
     pub(in crate::platforms::plugins::real_context) moderation: &'a judge::ModerationResult,
     pub(in crate::platforms::plugins::real_context) reason: &'a str,
     pub(in crate::platforms::plugins::real_context) endpoint: Option<&'a str>,
+    /// 她正在回答这个人前面那条(那条的 id)。
+    pub(in crate::platforms::plugins::real_context) answer_in_progress: Option<&'a str>,
+    /// 因为那条回答还在路上、判官又说这条只是催促,不回。
+    pub(in crate::platforms::plugins::real_context) covered_by_pending_answer: bool,
 }
 
 pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_log(
@@ -158,6 +162,23 @@ pub(in crate::platforms::plugins::real_context) fn format_active_reply_decision_
             locale,
             text_for(locale, "Direct trigger adjustment", "直接触发调整"),
             &format_adjustment(log.system_adjustment),
+        ));
+    }
+    if let Some(message_id) = log.answer_in_progress {
+        lines.push(format_decision_log_field(
+            locale,
+            text_for(locale, "Answer in progress", "正在回答"),
+            &if log.covered_by_pending_answer {
+                if locale == Locale::Zh {
+                    format!("他的上一条 [msg={message_id}] 还在回答，这条只是催促或重复，不单独回")
+                } else {
+                    format!("still answering [msg={message_id}]; this only urges or repeats, no separate reply")
+                }
+            } else if locale == Locale::Zh {
+                format!("他的上一条 [msg={message_id}] 还在回答")
+            } else {
+                format!("still answering [msg={message_id}]")
+            },
         ));
     }
     if log.after_speaking_score_adjustment.abs() >= 0.0005 {

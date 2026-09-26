@@ -84,6 +84,9 @@ pub struct PlatformTurnContext {
     /// Lazy file refs for queued follow-up prompts, keyed by prompt id.
     pub(crate) queued_files: Mutex<BTreeMap<String, Vec<PlatformContextFileRef>>>,
     pub(crate) reply_rate_available: AtomicBool,
+    /// 她正在回答这个发送者前面那条消息时，那条消息的 id（onebot 分发在判官之前填）。判官据它
+    /// 把这段时间里的「??」「人呢」判成不用单独回（用户 09-26：答案发出去之后又回一遍追问）。
+    pub(crate) answer_in_progress: Mutex<Option<String>>,
     pub(crate) pending_final_reply_suppression: AtomicBool,
     pub(crate) pending_prior_reply_suppression: AtomicBool,
 }
@@ -147,6 +150,7 @@ impl PlatformTurnContext {
             delivered_reply_texts: Mutex::new(Vec::new()),
             queued_files: Mutex::new(BTreeMap::new()),
             reply_rate_available: AtomicBool::new(true),
+            answer_in_progress: Mutex::new(None),
             pending_final_reply_suppression: AtomicBool::new(false),
             pending_prior_reply_suppression: AtomicBool::new(false),
         }
@@ -313,6 +317,14 @@ impl PlatformTurnContext {
 
     pub(crate) fn reply_rate_available(&self) -> bool {
         self.reply_rate_available.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_answer_in_progress(&self, message_id: Option<String>) {
+        *self.answer_in_progress.lock().unwrap() = message_id;
+    }
+
+    pub(crate) fn answer_in_progress(&self) -> Option<String> {
+        self.answer_in_progress.lock().unwrap().clone()
     }
 
     pub(crate) fn plugin_enabled(&self, id: &str, default_enabled: bool) -> bool {
