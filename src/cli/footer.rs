@@ -52,6 +52,8 @@ pub(in crate::cli) struct FooterBadges {
     pub(in crate::cli) visit_depth: usize,
     /// 会话树断过几次缓存（09-25）：用量那一段 Σ 的 C% 后面挂「断N」。
     pub(in crate::cli) cache_breaks: u64,
+    /// 输入框里有 Ctrl+S 存着的东西（09-26）：输入框顶行右边挂 `> stashed`。
+    pub(in crate::cli) stashed: bool,
 }
 
 impl From<bool> for FooterBadges {
@@ -61,6 +63,7 @@ impl From<bool> for FooterBadges {
             readonly,
             visit_depth: 0,
             cache_breaks: 0,
+            stashed: false,
         }
     }
 }
