@@ -7,6 +7,7 @@ mod runtime;
 mod targeting;
 use decision_log::*;
 use history::*;
+use pending::reaction_holder;
 use restraint::*;
 use runtime::*;
 // onebot 侧也用 safe_prompt_*（拼提示词前的注入边界）
@@ -275,6 +276,22 @@ impl PlatformPlugin for RealContextPlugin {
         })
     }
 
+    fn adopt_followup<'a>(
+        &'a self,
+        context: &'a PlatformTurnContext,
+        event: &'a PlatformInboundEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            if context.conversation.kind != ConversationKind::Group {
+                return;
+            }
+            let Ok(settings) = self.settings(context) else {
+                return;
+            };
+            self.adopt_merged_followup(context, event, &settings).await;
+        })
+    }
+
     fn after_turn_aborted<'a>(
         &'a self,
         context: &'a PlatformTurnContext,
@@ -305,15 +322,12 @@ impl PlatformPlugin for RealContextPlugin {
                 }
             };
             if reactions.is_empty() && settings.active_reply_reaction_enable {
-                if let Some(event) = context
-                    .inbound_event()
-                    .filter(|event| !event.message_id.is_empty())
-                {
+                if let Some(message_id) = reaction_holder(context) {
                     reactions.extend(
                         settings
                             .active_reply_reaction_emoji_ids
                             .iter()
-                            .map(|reaction| (event.message_id.clone(), reaction.to_string())),
+                            .map(|reaction| (message_id.clone(), reaction.to_string())),
                     );
                 }
             }

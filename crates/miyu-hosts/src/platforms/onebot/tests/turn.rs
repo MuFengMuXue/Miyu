@@ -88,7 +88,6 @@ async fn text_tool_followup_is_observed_and_queued_for_the_running_turn() {
         &event,
         parsed,
         &inbound,
-        &context,
         &followup,
         &session_id,
         "run-followup",

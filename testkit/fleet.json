@@ -1259,6 +1259,14 @@
       "lane": "qq-relay"
     },
     {
+      "name": "qq_bg_image",
+      "argv": [
+        "python3",
+        "testkit/qq-bg-image/run.py"
+      ],
+      "lane": "qq-relay"
+    },
+    {
       "name": "qq_sleep",
       "argv": [
         "python3",

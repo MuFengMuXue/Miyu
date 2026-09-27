@@ -455,14 +455,6 @@ impl RealContextPlugin {
                 0.0
             }
         };
-        // 这条顶掉了同一个人还没判完的上一条(inherited):上一条就由它来答,没有哪个在途的回答
-        // 覆盖得了——不挂「正在回答」,也就不会被当成催促判掉,两条一起没人答(09-26 实测时想到的
-        // 边角:那个人更早的一条恰好还在回答中)。
-        let answer_in_progress = if inherited {
-            None
-        } else {
-            context.answer_in_progress()
-        };
         let judged = tokio::select! {
             biased;
             _ = wait_for_supersede(&mut cancel_rx) => {
@@ -485,7 +477,6 @@ impl RealContextPlugin {
                     affection_prompt,
                     affection_bias,
                     emotion_adjustment,
-                    answer_in_progress: answer_in_progress.as_deref(),
                 },
             ) => judged,
         };
@@ -556,8 +547,6 @@ impl RealContextPlugin {
                 moderation: &judged.moderation,
                 reason: &judged.reasoning,
                 endpoint: judged.endpoint.as_deref(),
-                answer_in_progress: answer_in_progress.as_deref(),
-                covered_by_pending_answer: judged.covered_by_pending_answer,
             });
             tracing::info!(target: "miyu::qq", "\n{readable}");
         }
@@ -969,6 +958,18 @@ impl RealContextPlugin {
                 let _ = context
                     .set_message_reaction(message_id, &reaction, false)
                     .await;
+            }
+        }
+        // 并进来的新消息接过了表情(`adopt_followup`),而这次回复不一定引用它
+        // (引用开关关着时落回这一轮自己那条)。挂着表情的那条也摘掉。
+        if let Some(holder) =
+            reaction_holder(context).filter(|holder| Some(holder.as_str()) != target_message_id)
+        {
+            self.remove_reply_reactions(context, &holder, settings)
+                .await;
+            if let Some(message_id) = target_message_id {
+                context
+                    .set_plugin_value(REACTION_HOLDER_KEY, Value::String(message_id.to_string()));
             }
         }
         if context.plugin_value(REPLY_MARKED_KEY).is_some() {

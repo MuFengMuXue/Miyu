@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""QQ 群里她回得慢、对方连着催：两条说的是一件事就只回一条（用户 09-26）。
+"""QQ 群里她回得慢、同一个人又发了一条：判了要回就并进他那一轮，只回一条（用户 09-26）。
 
-沙箱 daemon + 假 NapCat（反向 WS）+ 桩模型（stub.py，兼扮判官）。两段，前一段收完再开后一段：
-  A  群友 @ 她问一句（TKQ1），桩慢慢写 20 秒；第 10 秒（已经过了 7 秒的「取代当前生成」窗口）他催「??」。
-  B  再问一句（TKQ2），第 10 秒补一个新问题（TKNEW）——补了新东西的照样要回。
-（新问题别跟在催促后面 7 秒内发：那会走「取代当前生成」，把正在写的答案整个换掉，测的就不是这件事。）
+沙箱 daemon + 假 NapCat（反向 WS）+ 桩模型（stub.py，兼扮判官、一律判回）。三段，前一段收完再开后一段：
+  A  群友 @ 她问一句（TKQ1），桩慢慢写 20 秒；第 10 秒（已经过了 7 秒的覆盖窗口）他催「??」。
+  B  再问一句（TKQ2），第 10 秒补一个新问题（TKNEW）——并进去重写，一条回复把两件事都答了。
+  C  A、B、A 交错：他问 TKQ3，第 3 秒另一个人插一句（TKB），第 10 秒他催「??」——「??」并进 TKQ3 那一轮，
+     另一个人照常排队、另起一轮。
 
     BIN=<miyu> python3 testkit/qq-urge/run.py
 
 判定：
-  judge_saw_pending_answer  判「??」的那次判官请求里带着 bot_answer_in_progress_for（她正在回答他）
-  urge_not_replied          「??」没有单独再回一条
-  answer_once               第一条答案只发了一次
-  new_info_answered         B 段：原问题答了一次，补的新问题也回了
-  decision_log_explains     决策日志里写明了「正在回答」
+  urge_merged / urge_one_reply            A 段：「??」并进了那一轮，整段只回一条
+  new_info_merged / new_info_one_reply    B 段：新问题并进了那一轮，整段只回一条，而且是带着新问题重写的那条
+  aba_merged_into_first / aba_two_replies C 段：「??」并进 TKQ3 那一轮，TKB 没并；整段两条（TKQ3 一条、TKB 一条）
+  reaction_moved                          并入那一刻表情就从原问题换贴到新的那条上（回复发出之前）
+  no_reaction_left                        回复发出后，所有消息上的表情都摘干净了
 """
 import importlib.util
 import json
@@ -43,7 +44,7 @@ STUB_LOG = SANDBOX / "stub.jsonl"
 spec = importlib.util.spec_from_file_location("fake", REPO / "testkit" / "fake-onebot" / "run.py")
 fake = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fake)
-ADMIN, MEMBER = 810000001, 810000002
+ADMIN, MEMBER, OTHER = 810000001, 810000002, 810000003
 
 
 def free_port():
@@ -57,6 +58,8 @@ fake.PORT = QQ_PORT
 results = {}
 LOCK = threading.Lock()
 SENDS = []
+REACTIONS = []  # (message_id, set) 按到达顺序
+TIMELINE = []  # ("send", 文本) / ("react", message_id, set)，两种一起按到达顺序
 
 
 def check(name, ok, detail=""):
@@ -79,6 +82,9 @@ def write_config():
             "enabled": True, "reverse_ws_port": QQ_PORT, "access_token": "",
             "admin_users": [ADMIN],
             "max_reply_chars": 0,
+            # 一段要发好几条，别让限流把后面的吃掉。
+            "group_chats": {"whitelist_rate_limit": {"max_messages": 0, "window_seconds": 60},
+                            "non_whitelist_rate_limit": {"max_messages": 0, "window_seconds": 60}},
             "plugins": {"reply_processor": {"enabled": False}},
         }},
     }
@@ -107,10 +113,37 @@ def pump(ws):
         if action in ("send_group_msg", "send_msg"):
             with LOCK:
                 SENDS.append(fake.render(params.get("message")))
+                TIMELINE.append(("send", SENDS[-1]))
+        if action == "set_msg_emoji_like":
+            with LOCK:
+                REACTIONS.append((int(params.get("message_id")), bool(params.get("set"))))
+                TIMELINE.append(("react", *REACTIONS[-1]))
         try:
             ws.send({"status": "ok", "retcode": 0, "data": fake.api_data(action, params), "echo": frame.get("echo")})
         except Exception:
             return
+
+
+def logs():
+    text = (SANDBOX / "daemon.log").read_text(errors="replace")
+    for path in (HOME / "cache" / "logs").glob("miyu.*.log"):
+        text += path.read_text(errors="replace")
+    return text
+
+
+def merged(message_id):
+    """这条消息并进了正在跑的那一轮（日志里有它的入队行）。"""
+    return any(
+        ("queued as a follow-up to the active turn" in line or "已加入当前回合的后续队列" in line)
+        and f"message_id={message_id}" in line
+        for line in logs().splitlines()
+    )
+
+
+def settle(mark, count):
+    """等这一段回够 count 条，再多等 10 秒：多出来的回复（另起的一轮）这时也该到了。"""
+    wait_for(lambda: len(sends()) - mark >= count, 90)
+    time.sleep(10)
 
 
 def sends():
@@ -142,34 +175,52 @@ def main():
         time.sleep(1.5)
 
         # A：只催一下
+        mark = len(sends())
         start = time.time()
-        fake.group_msg(ws, "TKQ1 帮我看看这个怎么装", sender=MEMBER, at_self=True, name="催催")
+        q1 = fake.group_msg(ws, "TKQ1 帮我看看这个怎么装", sender=MEMBER, at_self=True, name="催催")
         wait_for(lambda: any(r["role"] == "main" for r in stub_rows()), 20)
         time.sleep(max(0, start + 10 - time.time()))
-        fake.group_msg(ws, "??", sender=MEMBER, at_self=True, name="催催")
-        wait_for(lambda: any("A1-DONE" in s for s in sends()), 60)
-        time.sleep(10)  # 要是「??」另起了一轮，这时候也该回了
-        out = sends()
-        rows = stub_rows()
-        check("judge_saw_pending_answer", any(r["role"] == "judge" and r["busy"] and r["urge"] for r in rows),
-              [r for r in rows if r["role"] == "judge"])
-        check("urge_not_replied", not any("URGE-REPLY" in s for s in out), out)
-        check("answer_once", sum("A1-DONE" in s for s in out) == 1, out)
+        urge = fake.group_msg(ws, "??", sender=MEMBER, at_self=True, name="催催")
+        settle(mark, 1)
+        out = sends()[mark:]
+        check("urge_merged", merged(urge), urge)
+        check("urge_one_reply", len(out) == 1, out)
+        with LOCK:
+            timeline = list(TIMELINE)
+        first_send = next(i for i, entry in enumerate(timeline) if entry[0] == "send")
+        # 换贴发生在并入那一刻：原问题上的表情要在回复发出之前就摘掉（旧行为是等它自己那条回复发出去才摘）。
+        check("reaction_moved",
+              ("react", urge, True) in timeline and ("react", q1, False) in timeline[:first_send], timeline)
 
         # B：补了新问题
         mark = len(sends())
         start = time.time()
         fake.group_msg(ws, "TKQ2 那这个呢", sender=MEMBER, at_self=True, name="催催")
         time.sleep(max(0, start + 10 - time.time()))
-        fake.group_msg(ws, "TKNEW 另外 Windows 上能用吗", sender=MEMBER, at_self=True, name="催催")
-        wait_for(lambda: any("NEW-REPLY" in s for s in sends()[mark:]), 90)
-        time.sleep(3)
-        later = sends()[mark:]
-        check("new_info_answered",
-              sum("A2-DONE" in s for s in later) == 1 and any("NEW-REPLY" in s for s in later), later)
-        logs = log_path.read_text(errors="replace") + "".join(
-            p.read_text(errors="replace") for p in (HOME / "cache" / "logs").glob("miyu.*.log"))
-        check("decision_log_explains", "正在回答" in logs or "Answer in progress" in logs)
+        extra = fake.group_msg(ws, "TKNEW 另外 Windows 上能用吗", sender=MEMBER, at_self=True, name="催催")
+        settle(mark, 1)
+        out = sends()[mark:]
+        check("new_info_merged", merged(extra), extra)
+        check("new_info_one_reply", len(out) == 1 and "NEW-REPLY" in out[0], out)
+
+        # C：A、B、A
+        mark = len(sends())
+        start = time.time()
+        fake.group_msg(ws, "TKQ3 还有个问题", sender=MEMBER, at_self=True, name="催催")
+        time.sleep(max(0, start + 3 - time.time()))
+        other = fake.group_msg(ws, "TKB 在吗", sender=OTHER, at_self=True, name="路人")
+        time.sleep(max(0, start + 10 - time.time()))
+        urge = fake.group_msg(ws, "??", sender=MEMBER, at_self=True, name="催催")
+        settle(mark, 2)
+        out = sends()[mark:]
+        check("aba_merged_into_first", merged(urge) and not merged(other), (urge, other))
+        check("aba_two_replies", len(out) == 2, out)
+
+        with LOCK:
+            final = {}
+            for message_id, active in REACTIONS:
+                final[message_id] = active
+        check("no_reaction_left", final and not any(final.values()), final)
     finally:
         daemon.terminate()
         try:

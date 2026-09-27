@@ -337,6 +337,18 @@ pub trait PlatformPlugin: Send + Sync {
         Box::pin(async {})
     }
 
+    /// Runs on the sender's running turn after a message that was judged
+    /// worth answering got merged into that turn instead of starting its own,
+    /// so plugins can hand the new message's pending-reply bookkeeping and
+    /// reactions over to the turn that will actually answer it.
+    fn adopt_followup<'a>(
+        &'a self,
+        _context: &'a PlatformTurnContext,
+        _event: &'a PlatformInboundEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
+
     fn turn_started(
         &self,
         _context: &PlatformTurnContext,
@@ -562,6 +574,16 @@ impl PlatformPluginRegistry {
     ) {
         for plugin in self.enabled_plugins(context) {
             plugin.confirm_supersede(context, event).await;
+        }
+    }
+
+    pub(crate) async fn adopt_followup(
+        &self,
+        context: &PlatformTurnContext,
+        event: &PlatformInboundEvent,
+    ) {
+        for plugin in self.enabled_plugins(context) {
+            plugin.adopt_followup(context, event).await;
         }
     }
 

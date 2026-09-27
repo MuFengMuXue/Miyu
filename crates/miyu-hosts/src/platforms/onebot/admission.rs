@@ -138,6 +138,46 @@ pub(in crate::platforms::onebot) fn sends_rate_limit_notice(target: Target) -> b
     matches!(target, Target::Group { .. })
 }
 
+/// 记一次限流账并给出结论。不计数的人(`rate_key` 为空,如管理员)恒放行。
+pub(in crate::platforms::onebot) fn charge_rate(
+    state: &DaemonState,
+    admission: &Admission,
+) -> RateDecision {
+    admission
+        .rate_key
+        .as_deref()
+        .map_or(RateDecision::Allow, |key| {
+            state
+                .platforms
+                .rate
+                .lock()
+                .unwrap()
+                .check(key, admission.rate_limit)
+        })
+}
+
+/// 被限流时该说一声就说一声(只在群里说,见 `sends_rate_limit_notice`)。
+/// 返回说了没有。
+pub(in crate::platforms::onebot) async fn notify_rate_limited(
+    context: &PlatformTurnContext,
+    target: Target,
+    decision: RateDecision,
+) -> bool {
+    if decision != RateDecision::DropWithNotice || !sends_rate_limit_notice(target) {
+        return false;
+    }
+    let _ = context
+        .send_bypass_plugins(OutboundMessage::text(
+            OutboundOrigin::Command,
+            t(
+                "Too many messages — please slow down a little.",
+                "消息太频繁了，请稍候再发。",
+            ),
+        ))
+        .await;
+    true
+}
+
 pub(in crate::platforms::onebot) struct Admission {
     pub(in crate::platforms::onebot) allowed: bool,
     pub(in crate::platforms::onebot) rate_key: Option<String>,

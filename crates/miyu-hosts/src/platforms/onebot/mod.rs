@@ -9,6 +9,7 @@
 //! use an echo-to-oneshot table. Sends are acknowledged before plugin
 //! success hooks run, so transformations can safely persist delivery state.
 
+mod active_turn;
 mod adapter;
 mod admission;
 mod builtin_commands;
@@ -28,7 +29,9 @@ mod outbound;
 pub(crate) mod proactive;
 mod send;
 mod turn;
+mod undelivered;
 mod voice_inbound;
+use active_turn::*;
 use adapter::*;
 use admission::*;
 use builtin_commands::*;
@@ -50,6 +53,7 @@ use outbound::*;
 pub(crate) use proactive::send_direct_text;
 use turn::*;
 pub(crate) use turn::{account_connected, wake_conversation_for_restart};
+use undelivered::*;
 
 use super::access_control::{has_dynamic_access, AccessPermission};
 use super::{

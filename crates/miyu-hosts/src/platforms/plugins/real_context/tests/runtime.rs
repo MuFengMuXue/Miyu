@@ -49,8 +49,6 @@ fn active_reply_decision_log_is_structured_for_humans() {
         moderation: &moderation,
         reason: "当前消息延续了上一轮问题。",
         endpoint: Some("opencodego / mimo-v2.5"),
-        answer_in_progress: None,
-        covered_by_pending_answer: false,
     };
     let rendered = format_active_reply_decision_log_for(&log, Locale::Zh);
 

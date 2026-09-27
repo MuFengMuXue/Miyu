@@ -13,7 +13,7 @@ const JUDGE_SYSTEM_PROMPT: &str = "You are a proactive-reply judge for group cha
 
 const NORMAL_JUDGE_MODE: &str = "Decide whether the current bot persona should reply to the current message. You must combine the recent chat records, the speakers, reply/quote relations, @-mention targets, forms of address and semantic continuity to first determine who the current message is addressed to and who its expected responder is, and only then decide whether the bot is a suitable responder. Judge only the current message; the history is only for reconstructing context.";
 
-const REPLY_DECISION_GUIDANCE: &str = "Judging requirements:\n1. When the current message is addressed directly to the bot, or naturally continues a topic the bot just took part in, the inclination to reply may increase.\n2. When the current message is mainly responding to, asking, teasing or instructing other group members, the bot usually should not step in. Never reply merely because the bot knows the answer, could help, or finds the content interesting.\n3. For a topic open to any group member, a proactive reply is appropriate only when the bot's involvement is natural, fits the current persona, would not talk over anyone or interrupt the exchange, and adds clear value.\n4. When the communication target is unclear, judge from the speakers, reply/quote relations, @-mention targets, forms of address and semantic continuity of the last few rounds; when the evidence is still insufficient, lean toward not replying.\n5. If the reply about to be generated would mainly address something other than the current message, or would merely catch up on historical content, you must decide not to reply.\n6. When the metadata has bot_answer_in_progress_for, the bot is still writing its answer to that earlier message from the same sender. If the current message only urges, repeats or rephrases that request, such as \"??\", \"hello?\" or a sticker, set should_reply to false. The answer on its way covers it. Reply only when the message adds a new question or information that answer cannot cover.";
+const REPLY_DECISION_GUIDANCE: &str = "Judging requirements:\n1. When the current message is addressed directly to the bot, or naturally continues a topic the bot just took part in, the inclination to reply may increase.\n2. When the current message is mainly responding to, asking, teasing or instructing other group members, the bot usually should not step in. Never reply merely because the bot knows the answer, could help, or finds the content interesting.\n3. For a topic open to any group member, a proactive reply is appropriate only when the bot's involvement is natural, fits the current persona, would not talk over anyone or interrupt the exchange, and adds clear value.\n4. When the communication target is unclear, judge from the speakers, reply/quote relations, @-mention targets, forms of address and semantic continuity of the last few rounds; when the evidence is still insufficient, lean toward not replying.\n5. If the reply about to be generated would mainly address something other than the current message, or would merely catch up on historical content, you must decide not to reply.";
 
 const MODERATION_JUDGE_GUIDANCE: &str = "This call only performs a preliminary violation check on the current message; there is no need to judge whether the bot is the expected responder. You must confirm the meaning and the evidence in context; never rule a violation merely because a keyword appears.";
 
@@ -40,8 +40,6 @@ pub(super) struct JudgeRequest<'a> {
     pub(super) affection_bias: f64,
     /// 情绪对阈值的修正(负=更想接话),见 emotion::threshold_adjust。
     pub(super) emotion_adjustment: f64,
-    /// 她正在回答这个人前面那条消息(那条的 id)。见 `PlatformTurnContext::answer_in_progress`。
-    pub(super) answer_in_progress: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -74,8 +72,6 @@ pub(super) struct JudgeResult {
     pub(super) moderation: ModerationResult,
     /// 实际应答的端点(provider / model),供决策日志排障(08-24 需求)。
     pub(super) endpoint: Option<String>,
-    /// 她正在回答这个人前面那条、判官又说这条不用回:不看分数直接不回。
-    pub(super) covered_by_pending_answer: bool,
 }
 
 pub async fn run(
@@ -215,7 +211,7 @@ fn build_prompt(
     } else {
         REPLY_SCORING_GUIDANCE
     };
-    let event_metadata = judge_event_metadata(context, request.answer_in_progress);
+    let event_metadata = judge_event_metadata(context);
     let identity_warning = super::identity_warning(context, settings).unwrap_or_default();
     // Rules first, then the data they apply to. The judge runs on every group
     // message — hundreds of times a day — and the scoring guidance plus the
@@ -313,22 +309,15 @@ fn judge_persona_prompt<'a>(
     }
 }
 
-fn judge_event_metadata(context: &PlatformTurnContext, answer_in_progress: Option<&str>) -> String {
+fn judge_event_metadata(context: &PlatformTurnContext) -> String {
     let show_ids = context.config.platforms.qq.user_identification;
     let Some(event) = context.inbound_event() else {
         return "(none)".to_string();
     };
-    format_event_metadata(event, show_ids, answer_in_progress)
+    format_event_metadata(event, show_ids)
 }
 
-/// 这条消息的受信元数据(宿主字段,不是聊天正文)。`answer_in_progress` 只写消息 id——那条的原话
-/// 在群聊记录里本来就看得见,不往受信这一栏里搬不可信的正文。它排在群聊记录之后,每条都变,
-/// 不碰判官的缓存前缀。
-fn format_event_metadata(
-    event: &crate::platforms::PlatformInboundEvent,
-    show_ids: bool,
-    answer_in_progress: Option<&str>,
-) -> String {
+fn format_event_metadata(event: &crate::platforms::PlatformInboundEvent, show_ids: bool) -> String {
     let mut fields = serde_json::Map::new();
     fields.insert(
         "message_id".to_string(),
@@ -415,12 +404,6 @@ fn format_event_metadata(
             ),
         );
     }
-    if let Some(message_id) = answer_in_progress {
-        fields.insert(
-            "bot_answer_in_progress_for".to_string(),
-            Value::String(message_id.to_string()),
-        );
-    }
     Value::Object(fields).to_string()
 }
 
@@ -486,14 +469,10 @@ fn normalize_result(
         value.get("moderation").unwrap_or(&Value::Null),
         settings.moderation_min_severity,
     );
-    // 她正在回答这个人前面那条、判官又明说这条不用回(只是催促或重复):不回,不看分数(用户
-    // 09-26)。冲她来的直接触发 +0.3、续聊 +0.1 叠上去,光靠判官压低分数压不住。
-    let covered_by_pending_answer =
-        request.answer_in_progress.is_some() && model_should_reply == Some(false);
     let should_reply = if request.moderation_only {
         moderation.violation
     } else {
-        moderation.violation || (!covered_by_pending_answer && final_score >= effective_threshold)
+        moderation.violation || final_score >= effective_threshold
     };
     Ok(JudgeResult {
         should_reply,
@@ -514,7 +493,6 @@ fn normalize_result(
             .to_string(),
         moderation,
         endpoint: None,
-        covered_by_pending_answer,
     })
 }
 
@@ -751,8 +729,7 @@ mod tests {
     #[test]
     fn event_metadata_covers_group_sender_reply_and_mentions() {
         let event = inbound_event();
-        let visible: Value =
-            serde_json::from_str(&format_event_metadata(&event, true, None)).unwrap();
+        let visible: Value = serde_json::from_str(&format_event_metadata(&event, true)).unwrap();
         assert_eq!(visible["group_name"], "测试群");
         assert_eq!(visible["sender_id"], "7");
         assert_eq!(visible["reply_to"]["sender_id"], "8");
@@ -761,8 +738,7 @@ mod tests {
         assert_eq!(visible["mentioned_users"][0]["display_name"], "yuyi");
         assert_eq!(visible["mentioned_bot"], false);
 
-        let hidden: Value =
-            serde_json::from_str(&format_event_metadata(&event, false, None)).unwrap();
+        let hidden: Value = serde_json::from_str(&format_event_metadata(&event, false)).unwrap();
         assert!(hidden.get("sender_id").is_none());
         assert!(hidden["reply_to"].get("sender_id").is_none());
         assert!(hidden["mentioned_users"][0].get("user_id").is_none());
@@ -773,8 +749,7 @@ mod tests {
     fn event_metadata_preserves_bot_mention_when_user_ids_are_hidden() {
         let mut event = inbound_event();
         event.mentioned_bot = true;
-        let hidden: Value =
-            serde_json::from_str(&format_event_metadata(&event, false, None)).unwrap();
+        let hidden: Value = serde_json::from_str(&format_event_metadata(&event, false)).unwrap();
         assert_eq!(hidden["mentioned_bot"], true);
     }
 
@@ -833,7 +808,6 @@ mod tests {
             affection_prompt: "按普通关系判断。",
             affection_bias: 0.0,
             emotion_adjustment: 0.0,
-            answer_in_progress: None,
         }
     }
 
@@ -865,62 +839,6 @@ mod tests {
         );
         // 只加分,门槛不动——不能再顺手把门槛也抬一遍。
         assert!((spoke.effective_threshold - plain.effective_threshold).abs() < 1e-9);
-    }
-
-    /// 她正在回答这个人前面那条时,判官的受信元数据里写着那条的 id(用户 09-26)。只写 id,不搬正文。
-    #[test]
-    fn a_pending_answer_reaches_the_judge_as_trusted_metadata() {
-        let event = inbound_event();
-        let busy: Value =
-            serde_json::from_str(&format_event_metadata(&event, false, Some("555"))).unwrap();
-        assert_eq!(busy["bot_answer_in_progress_for"], "555");
-        let idle: Value =
-            serde_json::from_str(&format_event_metadata(&event, false, None)).unwrap();
-        assert!(idle.get("bot_answer_in_progress_for").is_none());
-        // 规则里点名的字段和元数据里写的是同一个名字。
-        assert!(REPLY_DECISION_GUIDANCE.contains("bot_answer_in_progress_for"));
-    }
-
-    /// 她正在回答这个人前面那条、判官又说这条只是催促:不回,哪怕直接触发 +0.3、续聊 +0.1
-    /// 把分数抬过了门槛(用户 09-26:答案发出去之后又回一遍追问)。不在回答他的时候照旧按分数。
-    #[test]
-    fn an_urge_while_answering_is_not_replied_even_with_the_direct_boost() {
-        let settings = RealContextPluginSettings::default();
-        let urge = serde_json::json!({
-            "should_reply": false,
-            "relevance": 9, "willingness": 8, "social": 8, "timing": 3, "continuity": 8,
-            "reasoning": "",
-        });
-        let mut busy = request(false);
-        busy.system_trigger_boost = 0.3;
-        busy.continuation_boost = 0.1;
-        busy.answer_in_progress = Some("555");
-        let judged = normalize_result(&settings, &busy, &urge).expect("催促");
-        assert!(
-            judged.final_score >= judged.effective_threshold,
-            "测的就是分数过了门槛的情形"
-        );
-        assert!(!judged.should_reply, "答案还在路上,催促不该另起一轮");
-        assert!(judged.covered_by_pending_answer);
-
-        // 不在回答他:和以前一样按分数。
-        let mut idle = request(false);
-        idle.system_trigger_boost = 0.3;
-        idle.continuation_boost = 0.1;
-        assert!(
-            normalize_result(&settings, &idle, &urge)
-                .expect("平常")
-                .should_reply
-        );
-
-        // 在回答他,但这条补了新东西(判官说要回):照回。
-        let new_question = serde_json::json!({
-            "should_reply": true,
-            "relevance": 9, "willingness": 8, "social": 8, "timing": 8, "continuity": 8,
-            "reasoning": "",
-        });
-        let judged = normalize_result(&settings, &busy, &new_question).expect("新问题");
-        assert!(judged.should_reply && !judged.covered_by_pending_answer);
     }
 
     /// 冷静机制只抬门槛,不再同时扣分(09-24 重做:两者数学上是同一件事,旧版

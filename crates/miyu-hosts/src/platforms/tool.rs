@@ -358,16 +358,15 @@ async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<Str
     // 兜底,与平台自动投递的去重同一语义。
     let mut skipped_duplicates = 0usize;
     let mut fresh = Vec::new();
+    let mut fresh_digests = Vec::new();
     if !image_paths.is_empty() {
         let delivered = context.delivered_image_digests();
         for (image, path) in images.iter().zip(image_paths) {
-            let duplicate = std::fs::read(&path)
-                .ok()
-                .map(|bytes| blake3::hash(&bytes))
-                .is_some_and(|digest| delivered.contains(&digest));
-            if duplicate {
+            let digest = std::fs::read(&path).ok().map(|bytes| blake3::hash(&bytes));
+            if digest.is_some_and(|digest| delivered.contains(&digest)) {
                 skipped_duplicates += 1;
             } else {
+                fresh_digests.extend(digest);
                 fresh.push((image, path));
             }
         }
@@ -415,6 +414,24 @@ async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<Str
     let delivered_text = segments
         .iter()
         .any(|segment| matches!(segment, OutboundSegment::Markdown(_)));
+    // 带图、带文件的交给后台去传，她不用干等（见 `background_send`）。
+    let names = attachment_names(&segments);
+    if !names.is_empty() {
+        if delivered_text {
+            context
+                .pending_final_reply_suppression
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+        return Ok(super::send_in_background(
+            context,
+            super::BackgroundSend {
+                segments,
+                text: text_arg.filter(|_| !deduplicated_text),
+                image_digests: fresh_digests,
+                names,
+            },
+        ));
+    }
     let receipt = context
         .send(OutboundMessage::segments(OutboundOrigin::Tool, segments))
         .await?;
@@ -441,6 +458,23 @@ async fn send(arguments: Value, context: Arc<PlatformTurnContext>) -> Result<Str
         "conversation": context.conversation.scope_key(),
     })
     .to_string())
+}
+
+/// 这条消息里附件的文件名（没有附件就是空的）。
+fn attachment_names(segments: &[OutboundSegment]) -> Vec<String> {
+    segments
+        .iter()
+        .filter_map(|segment| match segment {
+            OutboundSegment::ImagePath { path, .. } => Some(path.as_path()),
+            OutboundSegment::FilePath { path, .. } => Some(path.as_path()),
+            _ => None,
+        })
+        .map(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string())
+        })
+        .collect()
 }
 
 fn array(arguments: &Value, key: &str) -> Result<Vec<Value>> {

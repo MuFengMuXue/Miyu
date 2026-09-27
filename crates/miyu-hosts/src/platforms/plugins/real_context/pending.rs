@@ -188,6 +188,54 @@ impl RealContextPlugin {
         active
     }
 
+    /// 判过要回的新消息并进了同一个人正在跑的那一轮(`context` 是那一轮的)。
+    ///
+    /// 判断时给新消息登记的待回复改记在那一轮名下:回复发出时由它清掉,那一轮
+    /// 中止时由它撤表情。表情只留在最新那条上,那一轮原先挂表情的消息摘掉,和
+    /// 覆盖窗口里换贴一个样(用户 09-26:「贴,但是换贴」)。
+    pub(in crate::platforms::plugins::real_context) async fn adopt_merged_followup(
+        &self,
+        context: &PlatformTurnContext,
+        event: &PlatformInboundEvent,
+        settings: &RealContextPluginSettings,
+    ) {
+        if let Some(pending) = self
+            .runtime
+            .lock()
+            .unwrap()
+            .sessions
+            .get_mut(&runtime_session_key(context))
+            .and_then(|session| session.pending.get_mut(&event.sender_id))
+        {
+            pending.owner = context.ownership.clone();
+        }
+        let holder = reaction_holder(context);
+        context.set_plugin_value(REACTION_HOLDER_KEY, Value::String(event.message_id.clone()));
+        if let Some(holder) = holder.filter(|holder| *holder != event.message_id) {
+            self.remove_reply_reactions(context, &holder, settings)
+                .await;
+        }
+    }
+
+    /// 摘掉一条消息上的「要回」表情,连同它的定时摘除。
+    pub(in crate::platforms::plugins::real_context) async fn remove_reply_reactions(
+        &self,
+        context: &PlatformTurnContext,
+        message_id: &str,
+        settings: &RealContextPluginSettings,
+    ) {
+        for reaction in &settings.active_reply_reaction_emoji_ids {
+            let reaction = reaction.to_string();
+            self.cancel_reaction_expiration(context, message_id, &reaction);
+            if let Err(error) = context
+                .set_message_reaction(message_id, &reaction, false)
+                .await
+            {
+                tracing::debug!(error = %error, %message_id, "{}", miyu_base::i18n::text("QQ reply reaction could not be removed", "无法移除 QQ 回复表情回应"));
+            }
+        }
+    }
+
     pub(in crate::platforms::plugins::real_context) fn cancel_reaction_expiration(
         &self,
         context: &PlatformTurnContext,
@@ -294,4 +342,19 @@ impl RealContextPlugin {
             }
         }
     }
+}
+
+/// 这一轮的「要回」表情眼下挂在哪条消息上(见 `REACTION_HOLDER_KEY`)。
+pub(in crate::platforms::plugins::real_context) fn reaction_holder(
+    context: &PlatformTurnContext,
+) -> Option<String> {
+    context
+        .plugin_value(REACTION_HOLDER_KEY)
+        .and_then(|value| value.as_str().map(str::to_string))
+        .or_else(|| {
+            context
+                .inbound_event()
+                .map(|event| event.message_id.clone())
+        })
+        .filter(|message_id| !message_id.is_empty())
 }

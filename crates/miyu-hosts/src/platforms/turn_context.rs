@@ -84,11 +84,12 @@ pub struct PlatformTurnContext {
     /// Lazy file refs for queued follow-up prompts, keyed by prompt id.
     pub(crate) queued_files: Mutex<BTreeMap<String, Vec<PlatformContextFileRef>>>,
     pub(crate) reply_rate_available: AtomicBool,
-    /// 她正在回答这个发送者前面那条消息时，那条消息的 id（onebot 分发在判官之前填）。判官据它
-    /// 把这段时间里的「??」「人呢」判成不用单独回（用户 09-26：答案发出去之后又回一遍追问）。
-    pub(crate) answer_in_progress: Mutex<Option<String>>,
     pub(crate) pending_final_reply_suppression: AtomicBool,
     pub(crate) pending_prior_reply_suppression: AtomicBool,
+    /// 后台还在传的附件消息（见 `background_send`）。
+    pub(crate) uploads: UploadsInFlight,
+    /// 后台发的附件没传上去时往哪报（平台那边装，没装就只记日志）。
+    pub(crate) undelivered_hook: Option<UndeliveredHook>,
 }
 
 /// agent 侧的窄端口([`miyu_engine::agent::PlatformTurn`]):平台层实现,方向向下。
@@ -150,9 +151,10 @@ impl PlatformTurnContext {
             delivered_reply_texts: Mutex::new(Vec::new()),
             queued_files: Mutex::new(BTreeMap::new()),
             reply_rate_available: AtomicBool::new(true),
-            answer_in_progress: Mutex::new(None),
             pending_final_reply_suppression: AtomicBool::new(false),
             pending_prior_reply_suppression: AtomicBool::new(false),
+            uploads: UploadsInFlight::default(),
+            undelivered_hook: None,
         }
     }
 
@@ -162,6 +164,11 @@ impl PlatformTurnContext {
             event.message_id.clone(),
         ));
         self.inbound_event = Some(Arc::new(event));
+        self
+    }
+
+    pub(crate) fn with_undelivered_hook(mut self, hook: UndeliveredHook) -> Self {
+        self.undelivered_hook = Some(hook);
         self
     }
 
@@ -319,14 +326,6 @@ impl PlatformTurnContext {
         self.reply_rate_available.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_answer_in_progress(&self, message_id: Option<String>) {
-        *self.answer_in_progress.lock().unwrap() = message_id;
-    }
-
-    pub(crate) fn answer_in_progress(&self) -> Option<String> {
-        self.answer_in_progress.lock().unwrap().clone()
-    }
-
     pub(crate) fn plugin_enabled(&self, id: &str, default_enabled: bool) -> bool {
         self.config
             .platforms
@@ -416,6 +415,10 @@ impl PlatformTurnContext {
 
     pub(crate) async fn confirm_supersede(&self, event: &PlatformInboundEvent) {
         self.plugins.confirm_supersede(self, event).await;
+    }
+
+    pub(crate) async fn adopt_followup(&self, event: &PlatformInboundEvent) {
+        self.plugins.adopt_followup(self, event).await;
     }
 
     pub(crate) fn turn_is_superseded(&self) -> bool {
@@ -704,7 +707,7 @@ impl PlatformTurnContext {
         delivered.iter().any(|prev| {
             prev.normalized == normalized
                 || (grams.len() >= 16 && bigram_jaccard(&grams, &prev.grams) >= 0.66)
-        })
+        }) || self.uploads.carries_text(&normalized, &grams)
     }
 
     pub(crate) fn record_delivered_reply_text(&self, text: &str) {
@@ -765,6 +768,7 @@ impl PlatformTurnContext {
     pub(crate) fn delivered_image_digests(&self) -> HashSet<blake3::Hash> {
         let mut digests = self.delivered_image_digests.lock().unwrap().clone();
         digests.extend(recent_conversation_images(&self.conversation.scope_key()));
+        digests.extend(self.uploads.digests());
         digests
     }
 

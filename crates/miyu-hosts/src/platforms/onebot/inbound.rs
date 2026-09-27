@@ -40,7 +40,7 @@ pub(in crate::platforms::onebot) const MAX_INBOUND_FILE_NAME_CHARS: usize = 512;
 /// 一条消息里最多跟进几个合并转发。转发套转发的深度另有上限(见 `forward`)。
 pub(in crate::platforms::onebot) const MAX_INBOUND_FORWARDS: usize = 4;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(in crate::platforms::onebot) struct InboundMessage {
     pub(in crate::platforms::onebot) text: String,
     pub(in crate::platforms::onebot) text_chars: usize,
@@ -59,7 +59,7 @@ pub(in crate::platforms::onebot) struct InboundMessage {
     pub(in crate::platforms::onebot) forward_ids: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(in crate::platforms::onebot) enum MediaRef {
     Url(String),
     Bytes(Vec<u8>),
@@ -87,6 +87,7 @@ impl MediaRef {
     }
 }
 
+#[derive(Clone)]
 pub(in crate::platforms::onebot) struct FileRef {
     pub(in crate::platforms::onebot) file_id: Option<String>,
     pub(in crate::platforms::onebot) name: String,
