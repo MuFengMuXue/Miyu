@@ -297,6 +297,22 @@ impl StreamRenderer {
         } else {
             text
         };
+        // 还没开口时，正文开头的空行不算开口（09-27 真机：模型在两轮工具之间吐了一段
+        // `"\n\n"`，被当成开口收了段、又原样画成空行，收缩行下面空出一大块）。整块都是
+        // 空白就当没来过：不收段、不切模式、不画。
+        let text = if chunk.kind == ChatStreamKind::Content
+            && self.mode != Some(ChatStreamKind::Content)
+        {
+            // 只吞整行的空：开头空白里最后一个换行之前的部分，缩进留给正文自己。
+            let blank = &text[..text.len() - text.trim_start().len()];
+            let start = blank.rfind('\n').map_or(0, |at| at + 1);
+            if text.trim().is_empty() {
+                return Ok(());
+            }
+            text[start..].to_string()
+        } else {
+            text
+        };
         if text.is_empty() {
             return Ok(());
         }
