@@ -86,4 +86,42 @@
 
 ## 下载与安装
 
-RELEASE_ASSETS_PLACEHOLDER
+附件是七个安装包：Linux x86_64 六个、macOS（Apple Silicon）一个。Linux 主包自带字体、语义模型、表情、脚本、默认知识库和许可证；语音是可选包，版本要和主包一致，已经装了语音的请在同一条命令里写上两个包。
+
+| 系统 | 主包 | 可选语音包 |
+| --- | --- | --- |
+| Arch Linux | `miyu-0.7.0-1-x86_64.pkg.tar.zst` | `miyu-voice-0.7.0-1-x86_64.pkg.tar.zst` |
+| Debian 13 / Ubuntu 24.04 LTS 及更新 / Linux Mint 22 | `miyu_0.7.0-1_amd64.deb` | `miyu-voice_0.7.0-1_amd64.deb` |
+| Fedora 44 | `miyu-0.7.0-1.fc44.x86_64.rpm` | `miyu-voice-0.7.0-1.fc44.x86_64.rpm` |
+| macOS 15+（Apple Silicon） | `miyu-0.7.0-1-aarch64-apple-darwin.tar.gz`（请用 Homebrew 装） | — |
+
+```bash
+# Arch Linux
+sudo pacman -U ./miyu-0.7.0-1-x86_64.pkg.tar.zst
+
+# Debian / Ubuntu / Linux Mint
+sudo apt install ./miyu_0.7.0-1_amd64.deb
+
+# Fedora 44
+sudo dnf install ./miyu-0.7.0-1.fc44.x86_64.rpm
+
+# macOS（Apple Silicon）
+brew install shorin-kiwata/miyu/miyu
+```
+
+六个 Linux 包都在 Arch、Debian 13、Ubuntu 24.04、Ubuntu 26.04、Linux Mint 22.3、Fedora 44 的干净容器里装过一遍，macOS 包在 macOS 15 上解压验收并真装了一遍 Homebrew formula，每个都让她真回了一句话，47 项必需检查全过。Arch 也可以走 AUR：`miyu` / `miyu-voice` 是二进制包装，`miyu-git` 从源码构建。
+
+<details>
+<summary>SHA256 校验值（七个安装包）</summary>
+
+```text
+efedf097ee2e92c47c4dbd3af253310ec9b5edb28fd2e89974602190bc5266af  miyu-0.7.0-1-aarch64-apple-darwin.tar.gz
+53079da0da4a2918c22ccaa53ca2c25e690b208b6bf78a88f5ddc4da561c0405  miyu-0.7.0-1-x86_64.pkg.tar.zst
+5e057a02dea149dc6a57980c85c846ede04a3cdc3ee6bbd66004eab656290575  miyu-0.7.0-1.fc44.x86_64.rpm
+485807c48b76668ea0bc76d44dadc7deb76cb8221a8bc98881e23c43127280f0  miyu-voice-0.7.0-1-x86_64.pkg.tar.zst
+515e1733037e99fa5b2bdf6184e4746c6451aa297368c91c4d1361e1638af6b4  miyu-voice-0.7.0-1.fc44.x86_64.rpm
+c47e07c414cbebe55423e8701caf1109820ca79cd21ac1b88a4504e353616730  miyu-voice_0.7.0-1_amd64.deb
+b87d61977eb70a55186a816811d6cfc5e98550d88d1f15f0c27c9f5082308661  miyu_0.7.0-1_amd64.deb
+```
+
+</details>
