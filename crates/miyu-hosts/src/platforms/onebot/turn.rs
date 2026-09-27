@@ -3,9 +3,9 @@
 //! `build_and_run_turn` 是入站的终点、agent 的起点：拼上下文、建会话、跑回合、
 //! 把结果交给投递。
 //!
-//! 工具追加（`enqueue_tool_followup`）是这里最微妙的一块：工具产出的内容要作为
-//! 独立消息补发，但不能和主回复抢顺序，也不能在回合被取消后还发出去，所以先
-//! `reserve_tool_followup` 占位再入队。
+//! 并入正在跑的那一轮（`enqueue_tool_followup`）是这里最微妙的一块：工具正在跑
+//! 时，新消息要保证在下一步开始前被读到，也不能在回合被取消后还算数，所以先
+//! 占位（`active_sender_turn` 拿到的预留）再入队。
 
 use crate::platforms::onebot::*;
 
@@ -90,6 +90,30 @@ pub(crate) async fn wake_conversation_for_restart(
         initiator,
         content,
         RESTART_WAKE_NOTE,
+    )
+    .await
+}
+
+/// 后台发的附件没传上去、这个对话又没有正在跑的一轮：替它起一轮，把回报交给她
+/// （`undelivered`）。
+const UNDELIVERED_WAKE_NOTE: &str = "This turn was triggered automatically by the system, not by any group member or user. Something you sent earlier failed to upload, and the details are in this turn's message.";
+
+pub(in crate::platforms::onebot) async fn wake_conversation_for_undelivered(
+    state: &DaemonState,
+    account_id: &str,
+    conversation_kind: &str,
+    conversation_id: &str,
+    initiator: Option<&str>,
+    content: String,
+) -> Result<()> {
+    wake_conversation(
+        state,
+        account_id,
+        conversation_kind,
+        conversation_id,
+        initiator,
+        content,
+        UNDELIVERED_WAKE_NOTE,
     )
     .await
 }
@@ -260,7 +284,8 @@ pub(in crate::platforms::onebot) fn platform_turn_context_with_activity(
         adapter,
         state.platforms.plugins()?,
     )
-    .with_config_manager(state.manager.clone());
+    .with_config_manager(state.manager.clone())
+    .with_undelivered_hook(undelivered_hook(state));
     if let Some(activity) = activity {
         context = context.with_message_activity(activity);
     }
@@ -300,23 +325,6 @@ pub(in crate::platforms::onebot) fn platform_update_target(
         .map(|(_, run_id, turn_id, followup)| (run_id, turn_id, followup))
 }
 
-pub(in crate::platforms::onebot) fn reserve_tool_followup(
-    state: &DaemonState,
-    session_id: &str,
-    conversation: &PlatformConversation,
-    sender_id: &str,
-) -> Option<(
-    String,
-    String,
-    Arc<PlatformFollowupRun>,
-    miyu_engine::agent::QueueIngressReservation,
-)> {
-    let (run_id, turn_id, followup) =
-        platform_update_target(state, session_id, conversation, sender_id)?;
-    let reservation = followup.try_reserve()?;
-    Some((run_id, turn_id, followup, reservation))
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(in crate::platforms::onebot) async fn enqueue_tool_followup(
     state: &DaemonState,
@@ -325,7 +333,6 @@ pub(in crate::platforms::onebot) async fn enqueue_tool_followup(
     event: &Value,
     mut parsed: InboundMessage,
     inbound_event: &PlatformInboundEvent,
-    context: &PlatformTurnContext,
     followup: &PlatformFollowupRun,
     session_id: &str,
     run_id: &str,
@@ -432,7 +439,6 @@ pub(in crate::platforms::onebot) async fn enqueue_tool_followup(
         content.push_str(&format!("; @-mentions={}", mentions.join(", ")));
     }
 
-    context.observe_inbound(inbound_event).await;
     let receipt = enqueue_turn_update(
         state,
         TurnUpdateRequest {

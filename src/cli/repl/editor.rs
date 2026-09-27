@@ -81,6 +81,16 @@ pub(in crate::cli) fn restore_history_entry(
     *raw_pasted_lines = 0;
 }
 
+/// Ctrl+S 暂存的那一份输入（用户 09-26，照 Claude Code 的 stash）：输入框里写了一半想先跑一条
+/// 命令时用。正文连同粘贴的图片、长文本占位的载荷一起存，取回来和存进去时一模一样。
+pub(in crate::cli) struct StashedInput {
+    input: String,
+    cursor: usize,
+    raw_pasted_lines: usize,
+    pasted_images: Vec<Option<miyu_base::clipboard::PastedImage>>,
+    pasted_texts: Vec<Option<PastedText>>,
+}
+
 pub(in crate::cli) struct LiveReplEditor {
     pub(in crate::cli) mode: PersonaLane,
     /// 会话还是空的:Tab 可以换车道(普通 ↔ 开发)。第一条消息一发就钉死。
@@ -98,6 +108,8 @@ pub(in crate::cli) struct LiveReplEditor {
     pub(in crate::cli) pasted_images: Vec<Option<miyu_base::clipboard::PastedImage>>,
     pub(in crate::cli) pasted_texts: Vec<Option<PastedText>>,
     pub(in crate::cli) escape_armed_until: Option<Instant>,
+    /// Ctrl+S 存起来的输入。只活在这个终端界面里：切会话还在，退出就没了。
+    pub(in crate::cli) stashed: Option<StashedInput>,
     /// Whether the terminal window currently has focus, per the terminal's own
     /// focus reporting. Starts `true`: a terminal that never reports focus
     /// leaves this pinned, and notifications stay quiet rather than firing on
@@ -139,6 +151,7 @@ impl LiveReplEditor {
             pasted_images: Vec::new(),
             pasted_texts: Vec::new(),
             escape_armed_until: None,
+            stashed: None,
             focused: true,
             box_cols: None,
         }
@@ -164,6 +177,31 @@ impl LiveReplEditor {
         self.pasted_images.clear();
         self.pasted_texts.clear();
         self.escape_armed_until = None;
+    }
+
+    /// Ctrl+S：输入框里有字就存起来、清空，好先跑一条命令；空着就把存的取回来。两边都有就互换，
+    /// 正在打的和存着的哪一份都不丢。不自动取回（用户 09-26：再按一次调出来）。返回有没有变化。
+    pub(in crate::cli) fn toggle_stash(&mut self) -> bool {
+        if self.input.is_empty() && self.stashed.is_none() {
+            return false;
+        }
+        let current = (!self.input.is_empty()).then(|| StashedInput {
+            input: std::mem::take(&mut self.input),
+            cursor: self.cursor,
+            raw_pasted_lines: self.raw_pasted_lines,
+            pasted_images: std::mem::take(&mut self.pasted_images),
+            pasted_texts: std::mem::take(&mut self.pasted_texts),
+        });
+        self.clear();
+        if let Some(stashed) = self.stashed.take() {
+            self.input = stashed.input;
+            self.cursor = stashed.cursor;
+            self.raw_pasted_lines = stashed.raw_pasted_lines;
+            self.pasted_images = stashed.pasted_images;
+            self.pasted_texts = stashed.pasted_texts;
+        }
+        self.stashed = current;
+        true
     }
 
     pub(in crate::cli) fn submit(&mut self) -> Option<LiveSubmission> {
@@ -394,6 +432,9 @@ impl LiveReplEditor {
                     if modifiers.contains(KeyModifiers::CONTROL) && self.input.is_empty() =>
                 {
                     return Ok(LiveEditorAction::Exit);
+                }
+                KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.toggle_stash();
                 }
                 KeyCode::Char('w') if modifiers.contains(KeyModifiers::CONTROL) => {
                     remove_word_before_cursor(

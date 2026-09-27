@@ -828,6 +828,7 @@ impl LiveReplTail {
             readonly: self.editor.readonly,
             visit_depth: self.visits.len(),
             cache_breaks: self.cache_breaks,
+            stashed: self.editor.stashed.is_some(),
         }
     }
 

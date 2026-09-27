@@ -618,13 +618,15 @@ async fn tool_followup_reservation_requires_the_same_conversation_and_sender() {
     );
 
     assert!(
-        reserve_tool_followup(&state, &session_id, &followup.conversation, "other-sender")
-            .is_none()
+        active_sender_turn(&state, &session_id, &followup.conversation, "other-sender").is_none()
     );
     let mut other_conversation = followup.conversation.clone();
     other_conversation.conversation_id = "100".to_string();
-    assert!(reserve_tool_followup(&state, &session_id, &other_conversation, "42").is_none());
-    assert!(reserve_tool_followup(&state, &session_id, &followup.conversation, "42").is_some());
+    assert!(active_sender_turn(&state, &session_id, &other_conversation, "42").is_none());
+    let turn = active_sender_turn(&state, &session_id, &followup.conversation, "42").unwrap();
+    assert!(turn.reservation.is_some(), "工具正在跑:拿得到预留");
+    assert_eq!(turn.update_mode(), crate::runtime::TurnUpdateMode::Followup);
+    drop(turn);
 
     std::thread::sleep(Duration::from_millis(1));
     let newer = PlatformFollowupRun::new(followup.context.clone());
@@ -657,7 +659,12 @@ async fn tool_followup_reservation_requires_the_same_conversation_and_sender() {
 
     followup.ingress().tool_finished("call_1");
     newer.ingress().tool_finished("call_2");
-    assert!(reserve_tool_followup(&state, &session_id, &followup.conversation, "42").is_none());
+    let turn = active_sender_turn(&state, &session_id, &followup.conversation, "42").unwrap();
+    assert!(turn.reservation.is_none(), "工具跑完了:拿不到预留");
+    assert_eq!(
+        turn.update_mode(),
+        crate::runtime::TurnUpdateMode::Supersede
+    );
 }
 
 /// 群聊专属限流(09-24):本群有覆盖就用覆盖,白名单与否都一样;没覆盖按档位走;
@@ -711,34 +718,23 @@ fn ingress_order_is_strictly_monotonic() {
     assert!(second > first);
 }
 
-/// 回合在跑时新消息该排队还是该取代当前生成。
-///
-/// 群聊恒排队(覆盖走另一条分支);私聊只在工具执行期排队,否则取代——
-/// 她那时只是在写回复,而 QQ 里一句话拆几条发是常态(08-29 かなき 实录:
-/// 先发文字、三秒后补图,她先答"你没发图"再答对,两条都发出去了)。
+/// 回合在跑时,同一个人的新消息该排队还是该取代当前生成。私聊与群聊同一个判据:
+/// 只在工具执行期排队,否则取代——她那时只是在写回复,而 QQ 里一句话拆几条发
+/// 是常态(08-29 かなき 实录:先发文字、三秒后补图,她先答"你没发图"再答对,
+/// 两条都发出去了)。
 #[test]
-fn a_private_message_supersedes_a_reply_being_written_but_not_a_running_tool() {
+fn a_merged_message_supersedes_a_reply_being_written_but_not_a_running_tool() {
     use crate::runtime::TurnUpdateMode;
 
     assert_eq!(
-        active_turn_update_mode(false, false),
+        active_turn_update_mode(false),
         TurnUpdateMode::Supersede,
-        "私聊、没在跑工具:该取代"
+        "没在跑工具:该取代"
     );
     assert_eq!(
-        active_turn_update_mode(false, true),
+        active_turn_update_mode(true),
         TurnUpdateMode::Followup,
-        "私聊、正在跑工具:别打断"
-    );
-    assert_eq!(
-        active_turn_update_mode(true, false),
-        TurnUpdateMode::Followup,
-        "群聊在这条路上恒排队"
-    );
-    assert_eq!(
-        active_turn_update_mode(true, true),
-        TurnUpdateMode::Followup,
-        "群聊在这条路上恒排队"
+        "正在跑工具:别打断"
     );
 }
 

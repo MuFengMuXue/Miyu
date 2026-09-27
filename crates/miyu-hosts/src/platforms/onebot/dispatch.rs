@@ -102,29 +102,6 @@ pub(in crate::platforms::onebot) fn message_event_at(
     }
 }
 
-/// 回合还在跑时,新消息该排队还是该取代当前生成。
-///
-/// 群聊走的是另一条路(`reserve_tool_followup` 只在工具执行期返回 Some,
-/// 其余落到下面的覆盖分支),所以这里恒为排队。
-///
-/// 私聊的判据与群聊同源:**工具正在跑**说明她在真干活,排队别打断;否则她
-/// 只是在写回复,新消息该取代它。
-///
-/// 08-29 取证:QQ 里一句话拆成几条发是常态。用户先发"这是什么鱼"、三秒后
-/// 补图,回合已经带着"没有图"开跑并写出"你没发图我怎么知道",这句被中间
-/// 消息通道投递了出去,随后消费队列才答对——用户看到的是先装瞎再答题。
-/// 同样两条消息在群里会被覆盖窗口合并。
-pub(in crate::platforms::onebot) fn active_turn_update_mode(
-    is_group: bool,
-    tool_executing: bool,
-) -> TurnUpdateMode {
-    if is_group || tool_executing {
-        TurnUpdateMode::Followup
-    } else {
-        TurnUpdateMode::Supersede
-    }
-}
-
 pub(in crate::platforms::onebot) async fn handle_message_with_activity(
     state: DaemonState,
     conn: ConnectionHandle,
@@ -409,88 +386,17 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
             ),
         })
         .flatten();
-    if let Some(session_id) = session_id.as_deref() {
-        // Group chats only accept follow-ups while a tool is executing (the
-        // reservation guarantees same-round consumption); outside that window
-        // group messages go through supersede/new-turn admission because other
-        // people may be talking to each other. Private chats behave like the
-        // REPL/WebUI instead: any message while a turn is active becomes a
-        // follow-up to that turn, with the ingress reservation held when one
-        // is available.
-        let followup_target = if matches!(target, Target::Group { .. }) {
-            reserve_tool_followup(
-                &state,
-                session_id,
-                &context.conversation,
-                &context.sender_id,
-            )
-            .map(|(run_id, turn_id, followup, reservation)| {
-                (run_id, turn_id, followup, Some(reservation))
-            })
-        } else {
-            platform_update_target(
-                &state,
-                session_id,
-                &context.conversation,
-                &context.sender_id,
-            )
-            .map(|(run_id, turn_id, followup)| {
-                let reservation = followup.try_reserve();
-                (run_id, turn_id, followup, reservation)
-            })
-        };
-        // 私聊里选哪种入队。判据与群聊同源:**工具正在跑**说明她在真干活,
-        // 排队别打断;否则她只是在写回复,新消息该取代它。
-        //
-        // 08-29 取证:QQ 里一句话拆成几条发是常态。用户先发"这是什么鱼"、
-        // 三秒后补图,回合已经带着"没有图"开跑,写出"你没发图我怎么知道",
-        // 这句被中间消息通道投递了出去,随后消费队列才答对——用户看到的是
-        // 先装瞎再答题。同样的两条消息在群里会被覆盖窗口合并,私聊没有,
-        // 因为 follow-up 分支在覆盖分支之前就 return 了。
-        //
-        // Supersede 与 Followup 走同一条入队通道,只多一个 `supersede.trigger()`
-        // (runtime/turn_update.rs:85),agent 收到后丢弃当前生成的正文
-        // (turn_run.rs 的 `generation.superseded` → `text.clear()`),那句半成品
-        // 就不会被 flush 出去。
-        let private_update_mode = active_turn_update_mode(
-            matches!(target, Target::Group { .. }),
-            reserve_tool_followup(
-                &state,
-                session_id,
-                &context.conversation,
-                &context.sender_id,
-            )
-            .is_some(),
-        );
-        if let Some((run_id, turn_id, followup, reservation)) = followup_target {
-            let _ingress_reservation = reservation;
-            let _enqueue_order = followup.lock_enqueue().await;
-            let rate_decision = admission
-                .rate_key
-                .as_deref()
-                .map_or(RateDecision::Allow, |key| {
-                    state
-                        .platforms
-                        .rate
-                        .lock()
-                        .unwrap()
-                        .check(key, admission.rate_limit)
-                });
-            if rate_decision != RateDecision::Allow {
-                if rate_decision == RateDecision::DropWithNotice {
-                    let _ = context
-                        .send_bypass_plugins(OutboundMessage::text(
-                            OutboundOrigin::Command,
-                            t(
-                                "Too many messages — please slow down a little.",
-                                "消息太频繁了，请稍候再发。",
-                            ),
-                        ))
-                        .await;
-                }
-                return;
-            }
-            match enqueue_tool_followup(
+    // 私聊:回合在跑时新消息一律并进去,与终端、网页一致。群聊还有别人在说话,
+    // 同一个人的追问要先过回复判断,判了要回才并(见判断之后)。
+    if let (Some(session_id), Target::Private { .. }) = (session_id.as_deref(), target) {
+        if let Some(turn) = active_sender_turn(
+            &state,
+            session_id,
+            &context.conversation,
+            &context.sender_id,
+        ) {
+            context.observe_inbound(&inbound_event).await;
+            merge_into_active_turn(
                 &state,
                 &conn,
                 target,
@@ -498,47 +404,28 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                 parsed,
                 &inbound_event,
                 &context,
-                &followup,
+                &admission,
                 session_id,
-                &run_id,
-                &turn_id,
-                private_update_mode,
+                turn,
             )
-            .await
-            {
-                Ok(()) => tracing::info!(
-                    target: "miyu::qq",
-                    session_id,
-                    sender_id = user_id,
-                    message_id = %inbound_event.message_id,
-                    mode = match private_update_mode {
-                        TurnUpdateMode::Supersede => "supersede",
-                        TurnUpdateMode::Followup => "followup",
-                    },
-                    "{}",
-                    t("OneBot message queued as a follow-up to the active turn", "OneBot 消息已加入当前回合的后续队列")
-                ),
-                Err(error) => tracing::warn!(
-                    target: "miyu::qq",
-                    session_id,
-                    sender_id = user_id,
-                    error = %error,
-                    "{}",
-                    t("OneBot follow-up could not be queued", "OneBot 后续消息无法入队")
-                ),
-            }
+            .await;
             return;
         }
     }
     if let Some(session_id) = session_id.as_deref() {
         if context.preempt_inbound(&inbound_event) {
-            if let Some((run_id, turn_id, followup)) = platform_update_target(
+            if let Some(turn) = active_sender_turn(
                 &state,
                 session_id,
                 &context.conversation,
                 &context.sender_id,
             ) {
-                let _enqueue_order = followup.lock_enqueue().await;
+                // 覆盖窗口不收限流账,也不过判断:发错了马上改,承诺已经成立。
+                // 工具正在跑时照样只排队,别打断她干活。
+                let mode = turn.update_mode();
+                let _ingress_reservation = turn.reservation;
+                let _enqueue_order = turn.followup.lock_enqueue().await;
+                context.observe_inbound(&inbound_event).await;
                 let result = enqueue_tool_followup(
                     &state,
                     &conn,
@@ -546,12 +433,11 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                     &event,
                     parsed,
                     &inbound_event,
-                    &context,
-                    &followup,
+                    &turn.followup,
                     session_id,
-                    &run_id,
-                    &turn_id,
-                    TurnUpdateMode::Supersede,
+                    &turn.run_id,
+                    &turn.turn_id,
+                    mode,
                 )
                 .await;
                 match result {
@@ -606,6 +492,7 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
             .session_turn_ticket_in_order(session_id, session_limits, order_slot)
     });
     let message_id = inbound_event.message_id.clone();
+    let mut rate_charged = false;
     if plugin_command_response.is_none() && builtin_command.is_none() {
         let trigger_content = core_trigger_content;
         let mut trigger = TriggerDecision {
@@ -633,6 +520,42 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
         }
         parsed.text = trigger.content;
         context.set_response_target(trigger.response_target);
+        // 群聊:判了要回,而这个人还有一轮在跑,就并进那一轮,不另起一轮。
+        if let (Some(session_id), Target::Group { .. }) = (session_id.as_deref(), target) {
+            if let Some(turn) = active_sender_turn(
+                &state,
+                session_id,
+                &context.conversation,
+                &context.sender_id,
+            ) {
+                let fallback = parsed.clone();
+                match merge_into_active_turn(
+                    &state,
+                    &conn,
+                    target,
+                    &event,
+                    parsed,
+                    &inbound_event,
+                    &context,
+                    &admission,
+                    session_id,
+                    turn,
+                )
+                .await
+                {
+                    MergeOutcome::Merged => return,
+                    MergeOutcome::RateLimited => {
+                        context.after_turn_aborted().await;
+                        return;
+                    }
+                    // 那一轮恰好收尾:照常另起一轮,账已经记过了。
+                    MergeOutcome::Missed => {
+                        parsed = fallback;
+                        rate_charged = true;
+                    }
+                }
+            }
+        }
     }
     let session_turn = match session_turn_ticket {
         Some(ticket) => match ticket.acquire().await {
@@ -721,34 +644,15 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
         return;
     }
 
-    let decision = admission
-        .rate_key
-        .as_deref()
-        .map_or(RateDecision::Allow, |key| {
-            state
-                .platforms
-                .rate
-                .lock()
-                .unwrap()
-                .check(key, admission.rate_limit)
-        });
+    let decision = if rate_charged {
+        RateDecision::Allow
+    } else {
+        charge_rate(&state, &admission)
+    };
     match decision {
         RateDecision::Allow => {}
-        RateDecision::DropSilently => {
-            tracing::info!(
-                target: "miyu::qq",
-                self_id,
-                sender_id = user_id,
-                conversation_kind = target.kind(),
-                conversation_id = target.conversation_id(),
-                "{}",
-                t("OneBot message rate-limited", "OneBot 消息已被限流")
-            );
-            context.after_turn_aborted().await;
-            return;
-        }
-        RateDecision::DropWithNotice => {
-            let notice_sent = sends_rate_limit_notice(target);
+        RateDecision::DropSilently | RateDecision::DropWithNotice => {
+            let notice_sent = notify_rate_limited(&context, target, decision).await;
             tracing::info!(
                 target: "miyu::qq",
                 self_id,
@@ -759,17 +663,6 @@ pub(in crate::platforms::onebot) async fn handle_message_with_activity(
                 "{}",
                 t("OneBot message rate-limited", "OneBot 消息已被限流")
             );
-            if notice_sent {
-                let _ = context
-                    .send_bypass_plugins(OutboundMessage::text(
-                        OutboundOrigin::Command,
-                        t(
-                            "Too many messages — please slow down a little.",
-                            "消息太频繁了，请稍候再发。",
-                        ),
-                    ))
-                    .await;
-            }
             context.after_turn_aborted().await;
             return;
         }

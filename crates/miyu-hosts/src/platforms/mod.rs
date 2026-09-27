@@ -7,6 +7,7 @@
 //! reuse everything here without touching the web core.
 
 mod activity;
+mod background_send;
 mod inflight;
 mod live_turns;
 mod logging;
@@ -18,6 +19,7 @@ mod turn_order;
 mod turn_ownership;
 mod turn_run;
 pub(crate) use activity::*;
+pub(crate) use background_send::*;
 pub(crate) use logging::*;
 pub(crate) use reply::*;
 pub(crate) use scheduling::*;

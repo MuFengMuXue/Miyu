@@ -1006,9 +1006,11 @@ pub(in crate::cli) fn render_repl_input_with_footer(
     // 往前跑吗、第几轮了」（用户 09-19）。这行常驻提示只说这一件事，不进
     // footer——那儿已经挤着模型名和用量了。
     let goal_hint = crate::cli::footer::goal_hint_text(footer.goal.as_ref());
+    let prefix_width = visible_width(&prompt_prefix);
+    // 从右往左摆：`/goal` 提示贴右边，暂存标记在它左边。
+    let mut right_edge = cols;
     if !goal_hint.is_empty() {
         let hint_width = visible_width(&goal_hint);
-        let prefix_width = visible_width(&prompt_prefix);
         // 放不下就整条不画：截断出来的 `/goal runn` 比没有更糟。
         if cols > prefix_width.saturating_add(hint_width).saturating_add(2) {
             let column = u16::try_from(cols.saturating_sub(hint_width))
@@ -1020,6 +1022,23 @@ pub(in crate::cli) fn render_repl_input_with_footer(
                 stdout,
                 MoveTo(column, *input_row),
                 Print(format!("{style}{goal_hint}\x1b[0m"))
+            )?;
+            right_edge = cols.saturating_sub(hint_width).saturating_sub(2);
+        }
+    }
+    // Ctrl+S 存着东西（09-26，照 Claude Code）：同一行右端挂一个暗色的「> 暂存」，
+    // 提醒输入框清空了但东西还在，再按一次取回。跟界面语言走（用户 09-27：中文界面写中文）。
+    if badges.stashed {
+        let stash_mark = t("> stashed", "> 暂存");
+        let mark_width = visible_width(stash_mark);
+        if right_edge > prefix_width.saturating_add(mark_width).saturating_add(2) {
+            let column = u16::try_from(right_edge.saturating_sub(mark_width))
+                .unwrap_or(u16::MAX)
+                .saturating_add(x0);
+            queue!(
+                stdout,
+                MoveTo(column, *input_row),
+                Print(format!("\x1b[2m\x1b[38;5;245m{stash_mark}\x1b[0m"))
             )?;
         }
     }

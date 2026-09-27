@@ -960,6 +960,18 @@ impl RealContextPlugin {
                     .await;
             }
         }
+        // 并进来的新消息接过了表情(`adopt_followup`),而这次回复不一定引用它
+        // (引用开关关着时落回这一轮自己那条)。挂着表情的那条也摘掉。
+        if let Some(holder) =
+            reaction_holder(context).filter(|holder| Some(holder.as_str()) != target_message_id)
+        {
+            self.remove_reply_reactions(context, &holder, settings)
+                .await;
+            if let Some(message_id) = target_message_id {
+                context
+                    .set_plugin_value(REACTION_HOLDER_KEY, Value::String(message_id.to_string()));
+            }
+        }
         if context.plugin_value(REPLY_MARKED_KEY).is_some() {
             return;
         }

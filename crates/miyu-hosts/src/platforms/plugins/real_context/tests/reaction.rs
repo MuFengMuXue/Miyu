@@ -117,3 +117,86 @@ fn only_self_initiated_triggers_skip_the_reaction() {
         assert_eq!(trigger.marks_with_reaction(), wants, "{trigger:?}");
     }
 }
+
+/// 判过要回的新消息并进了同一个人正在跑的那一轮(09-26):表情从那一轮原先的
+/// 消息换贴到新消息上,新消息的待回复改记在那一轮名下——新消息自己的上下文随
+/// 并入就散了,回复发出时只有那一轮能把它清掉。回复没引用新消息(引用开关关着,
+/// 落回那一轮自己那条)时,新消息上的表情也得摘。
+#[tokio::test]
+async fn a_merged_followup_moves_the_reaction_and_hands_its_pending_to_the_running_turn() {
+    let (_temp, running, recorded) = reaction_context();
+    let plugin = RealContextPlugin::new();
+    let mut followup = inbound_event();
+    followup.message_id = "message-2".to_string();
+    let newcomer = PlatformTurnContext::new(
+        running.conversation.clone(),
+        running.sender_id.clone(),
+        running.sender_display_name.clone(),
+        false,
+        running.config.clone(),
+        running.paths.clone(),
+        running.state_store.clone(),
+        running.adapter.clone(),
+        running.plugins.clone(),
+    )
+    .with_inbound_event(followup.clone());
+    plugin.register_committed_pending(
+        &newcomer,
+        TriggerKind::Direct,
+        vec![("message-2".to_string(), "289".to_string())],
+        vec![active_reply_target(&followup)],
+        false,
+    );
+
+    PlatformPlugin::adopt_followup(&plugin, &running, &followup).await;
+
+    assert!(
+        recorded
+            .lock()
+            .unwrap()
+            .contains(&("message-1".to_string(), "289".to_string(), false)),
+        "那一轮原先的消息应摘掉表情"
+    );
+    assert!(
+        !recorded
+            .lock()
+            .unwrap()
+            .contains(&("message-2".to_string(), "289".to_string(), false)),
+        "新消息的表情留着,等回复发出"
+    );
+    {
+        let runtime = plugin.runtime.lock().unwrap();
+        let pending = runtime
+            .sessions
+            .get(&runtime_session_key(&running))
+            .and_then(|session| session.pending.get(&followup.sender_id))
+            .expect("待回复应还在");
+        assert!(
+            pending.owner.same_turn(&running.ownership),
+            "待回复应改记在那一轮名下"
+        );
+    }
+
+    let reply = OutboundMessage::text(OutboundOrigin::FinalReply, "好");
+    plugin
+        .finish_reply(&running, &reply, &RealContextPluginSettings::default())
+        .await;
+    assert!(
+        recorded
+            .lock()
+            .unwrap()
+            .contains(&("message-2".to_string(), "289".to_string(), false)),
+        "回复发出后新消息上的表情应摘掉"
+    );
+    assert!(
+        plugin
+            .runtime
+            .lock()
+            .unwrap()
+            .sessions
+            .get(&runtime_session_key(&running))
+            .and_then(|session| session.pending.get(&followup.sender_id))
+            .is_none(),
+        "回复发出后待回复应由那一轮清掉"
+    );
+}

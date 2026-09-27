@@ -182,6 +182,14 @@
       "lane": "tui"
     },
     {
+      "name": "input_stash",
+      "argv": [
+        "python3",
+        "testkit/tui/input_stash.py"
+      ],
+      "lane": "tui"
+    },
+    {
       "name": "panel_streams",
       "argv": [
         "python3",
@@ -1239,6 +1247,22 @@
       "argv": [
         "python3",
         "testkit/qq-subagent-reports/run.py"
+      ],
+      "lane": "qq-relay"
+    },
+    {
+      "name": "qq_urge",
+      "argv": [
+        "python3",
+        "testkit/qq-urge/run.py"
+      ],
+      "lane": "qq-relay"
+    },
+    {
+      "name": "qq_bg_image",
+      "argv": [
+        "python3",
+        "testkit/qq-bg-image/run.py"
       ],
       "lane": "qq-relay"
     },

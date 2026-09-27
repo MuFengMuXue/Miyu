@@ -86,6 +86,10 @@ pub struct PlatformTurnContext {
     pub(crate) reply_rate_available: AtomicBool,
     pub(crate) pending_final_reply_suppression: AtomicBool,
     pub(crate) pending_prior_reply_suppression: AtomicBool,
+    /// 后台还在传的附件消息（见 `background_send`）。
+    pub(crate) uploads: UploadsInFlight,
+    /// 后台发的附件没传上去时往哪报（平台那边装，没装就只记日志）。
+    pub(crate) undelivered_hook: Option<UndeliveredHook>,
 }
 
 /// agent 侧的窄端口([`miyu_engine::agent::PlatformTurn`]):平台层实现,方向向下。
@@ -149,6 +153,8 @@ impl PlatformTurnContext {
             reply_rate_available: AtomicBool::new(true),
             pending_final_reply_suppression: AtomicBool::new(false),
             pending_prior_reply_suppression: AtomicBool::new(false),
+            uploads: UploadsInFlight::default(),
+            undelivered_hook: None,
         }
     }
 
@@ -158,6 +164,11 @@ impl PlatformTurnContext {
             event.message_id.clone(),
         ));
         self.inbound_event = Some(Arc::new(event));
+        self
+    }
+
+    pub(crate) fn with_undelivered_hook(mut self, hook: UndeliveredHook) -> Self {
+        self.undelivered_hook = Some(hook);
         self
     }
 
@@ -404,6 +415,10 @@ impl PlatformTurnContext {
 
     pub(crate) async fn confirm_supersede(&self, event: &PlatformInboundEvent) {
         self.plugins.confirm_supersede(self, event).await;
+    }
+
+    pub(crate) async fn adopt_followup(&self, event: &PlatformInboundEvent) {
+        self.plugins.adopt_followup(self, event).await;
     }
 
     pub(crate) fn turn_is_superseded(&self) -> bool {
@@ -692,7 +707,7 @@ impl PlatformTurnContext {
         delivered.iter().any(|prev| {
             prev.normalized == normalized
                 || (grams.len() >= 16 && bigram_jaccard(&grams, &prev.grams) >= 0.66)
-        })
+        }) || self.uploads.carries_text(&normalized, &grams)
     }
 
     pub(crate) fn record_delivered_reply_text(&self, text: &str) {
@@ -753,6 +768,7 @@ impl PlatformTurnContext {
     pub(crate) fn delivered_image_digests(&self) -> HashSet<blake3::Hash> {
         let mut digests = self.delivered_image_digests.lock().unwrap().clone();
         digests.extend(recent_conversation_images(&self.conversation.scope_key()));
+        digests.extend(self.uploads.digests());
         digests
     }
 

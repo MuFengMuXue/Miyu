@@ -19,6 +19,11 @@ pub(in crate::platforms::plugins::real_context) const REPLY_MARKED_KEY: &str =
 pub(in crate::platforms::plugins::real_context) const ACTIVE_TARGETS_KEY: &str =
     "real_context.active_targets";
 
+/// 这一轮的「要回」表情眼下挂在哪条消息上。没写过就是这一轮自己那条入站消息;
+/// 同一个人的新消息并进来后换成新消息(见 `adopt_followup`)。
+pub(in crate::platforms::plugins::real_context) const REACTION_HOLDER_KEY: &str =
+    "real_context.reaction_holder";
+
 pub(in crate::platforms::plugins::real_context) const MAX_ACTIVE_TARGET_MESSAGES: usize = 8;
 
 pub(in crate::platforms::plugins::real_context) const MAX_ACTIVE_SUPPLEMENT_MESSAGES: usize = 5;
