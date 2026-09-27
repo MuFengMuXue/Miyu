@@ -98,6 +98,17 @@ miyu config
   sudo dnf install ./miyu-<版本>.fc<N>.x86_64.rpm
   ```
 
+- macOS（Apple Silicon，macOS 15 及以上）
+
+  ```
+  brew install shorin-kiwata/miyu/miyu
+  ```
+  请写全名安装：Homebrew 6 起第三方 tap 要显式信任，全名只信任这一个 formula。chafa、ripgrep、onnxruntime 会一起装好。Release 页上的 macOS 包没有签名，浏览器直接下载会被 Gatekeeper 拦，只支持用 Homebrew 安装。
+
+  macOS 版不带语音包，想用嘴代替打字就用系统自带的听写（连按两下 Fn）。
+
+  终端界面的图标用的是 Nerd Font（v3）的字形：装好一款 **Nerd Font Mono** 字体后，还要在终端（Terminal.app / iTerm2 的描述文件）里把字体**选成它**，只装不选图标会显示成方框。不想装字体就设 `MIYU_TUI_ASCII=1` 改用通用符号。
+
 - 从源码构建
 
   ```
