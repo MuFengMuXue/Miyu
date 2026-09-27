@@ -1,0 +1,752 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# 显示名称：抖音/TikTok 下载
+# Description: Download Douyin or TikTok videos and photo posts (图文) without watermark. Accepts raw share text with a short link, not just a clean URL. Use action=info to inspect before downloading.
+# Timeout: 300
+# Group: media
+# Id: douyin_dl
+# Parameters:
+# {
+#   "type": "object",
+#   "properties": {
+#     "url": {
+#       "type": "string",
+#       "description": "Share text or URL. The whole blob copied from the app is fine; short links are resolved automatically"
+#     },
+#     "action": {
+#       "type": "string",
+#       "enum": ["info", "download", "doctor"],
+#       "description": "info = parse only (default), download = fetch the file (a photo post saves every image into one folder), doctor = self-check the environment"
+#     },
+#     "out_dir": {
+#       "type": "string",
+#       "description": "Download target directory, default ~/Downloads/douyin"
+#     },
+#     "quality": {
+#       "type": "string",
+#       "enum": ["best", "1080", "720", "worst"],
+#       "description": "Preferred video quality, default best"
+#     },
+#     "cookies": {
+#       "type": "string",
+#       "description": "Path to a Netscape cookies.txt. Only needed when Douyin refuses anonymous access"
+#     },
+#     "format": {
+#       "type": "string",
+#       "enum": ["md", "json"],
+#       "description": "Output format, default md"
+#     }
+#   }
+# }
+"""Douyin / TikTok downloader for Miyu.
+
+Design notes
+------------
+The heavy lifting (extraction, muxing) is delegated to yt-dlp, which ships a
+maintained Douyin extractor.  What yt-dlp does *not* do is accept the blob of
+text the mobile apps put on your clipboard, so this script owns that layer:
+
+    share text  ->  clean url  ->  canonical long url  ->  yt-dlp
+
+Photo posts (Douyin 图文, TikTok photo mode) carry no video at all, only a list
+of images plus a background track, so they take a separate path that saves
+each image into a folder of its own.
+
+Everything here is written from scratch against publicly documented endpoints
+and the stdlib; no third-party code was copied.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# --------------------------------------------------------------------------
+# output helpers
+# --------------------------------------------------------------------------
+
+
+def fail(error, fix=None, code=2):
+    print(json.dumps({"ok": False, "error": error, "fix": fix},
+                     ensure_ascii=False))
+    sys.exit(code)
+
+
+# --------------------------------------------------------------------------
+# layer 1 -- clean the share text
+# --------------------------------------------------------------------------
+
+# Mojibake produced when GBK bytes are decoded as UTF-8 and back.  It shows up
+# in the middle of clipboard text often enough to break a naive URL regex.
+_MOJIBAKE = re.compile(r"锟斤拷|锟|斤拷|�")
+
+# Ordered most-specific first.  The final pattern is the catch-all; it stops at
+# CJK characters on purpose, because Douyin captions frequently run straight
+# into the link with no separating whitespace.
+_PATTERNS = [
+    re.compile(r"https?://v\.douyin\.com/[A-Za-z0-9_\-]+"),
+    re.compile(r"https?://(?:www\.)?douyin\.com/(?:video|note|slides)/\d+"),
+    re.compile(r"https?://(?:www\.)?iesdouyin\.com/share/(?:video|note)/\d+"),
+    re.compile(r"https?://(?:vm|vt)\.tiktok\.com/[A-Za-z0-9_\-]+"),
+    re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/(?:video|photo)/\d+"),
+    re.compile(r"https?://(?:www\.)?tiktok\.com/t/[A-Za-z0-9_\-]+"),
+    re.compile(r"https?://[^\s一-鿿　-〿，。！？、；：（）【】]+"),
+]
+
+
+def extract_url(text):
+    """Pull the first usable URL out of arbitrary share text."""
+    cleaned = _MOJIBAKE.sub("", text or "").strip()
+    for pattern in _PATTERNS:
+        match = pattern.search(cleaned)
+        if match:
+            # Trailing punctuation is never part of the URL.
+            return match.group(0).rstrip('.,;:!?)"\'》」）')
+    return cleaned
+
+
+# --------------------------------------------------------------------------
+# layer 2 -- resolve short links to a canonical long URL
+# --------------------------------------------------------------------------
+
+_ID_IN_PATH = re.compile(r"/(?:video|note|slides)/(\d+)")
+_ID_IN_QUERY = re.compile(r"(?:modal_id|aweme_id|item_ids?)=(\d{10,})")
+
+
+def _head_follow(url, cookie_header=None, timeout=15):
+    """Follow redirects and return the final URL."""
+    request = urllib.request.Request(url, headers={
+        "User-Agent": UA,
+        **({"Cookie": cookie_header} if cookie_header else {}),
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.geturl()
+    except urllib.error.HTTPError as exc:
+        # A 4xx still tells us where we landed.
+        return exc.url or url
+    except Exception:
+        return url
+
+
+def detect_platform(url):
+    lowered = url.lower()
+    if "douyin.com" in lowered:
+        return "douyin"
+    if "tiktok.com" in lowered:
+        return "tiktok"
+    return "other"
+
+
+def canonicalize(url, cookie_header=None):
+    """Turn any Douyin/TikTok link into the form yt-dlp's extractor accepts."""
+    platform = detect_platform(url)
+
+    if platform == "douyin":
+        aweme_id = None
+        match = _ID_IN_PATH.search(url) or _ID_IN_QUERY.search(url)
+        if match:
+            aweme_id = match.group(1)
+        else:
+            # Short link: one redirect hop carries the real id.
+            resolved = _head_follow(url, cookie_header)
+            match = _ID_IN_PATH.search(resolved) or _ID_IN_QUERY.search(resolved)
+            if match:
+                aweme_id = match.group(1)
+        if not aweme_id:
+            return url, platform, None
+        return f"https://www.douyin.com/video/{aweme_id}", platform, aweme_id
+
+    if platform == "tiktok":
+        if not re.search(r"/(?:video|photo)/\d+", url):
+            url = _head_follow(url, cookie_header)
+        # yt-dlp only matches /video/; a photo post answers under the same id.
+        return url.replace("/photo/", "/video/"), platform, None
+
+    return url, platform, None
+
+
+
+# --------------------------------------------------------------------------
+# layer 3a -- Douyin's own web detail API
+# --------------------------------------------------------------------------
+#
+# yt-dlp ships a Douyin extractor, but it calls the detail endpoint without the
+# web client id, so anonymous requests come back empty and it raises "Fresh
+# cookies are needed".  The endpoint itself is happy to answer an anonymous
+# caller as long as (a) the PC-web client parameters are present and (b) the
+# request carries a `ttwid` device cookie, which ByteDance hands out for free.
+# Both are protocol facts, not anybody's source code.
+
+_DETAIL_API = "https://www.douyin.com/aweme/v1/web/aweme/detail/"
+_TTWID_API = "https://ttwid.bytedance.com/ttwid/union/register/"
+_TTWID_BODY = {
+    "region": "cn",
+    "aid": 1768,
+    "needFid": False,
+    "service": "www.ixigua.com",
+    "migrate_info": {"ticket": "", "source": "node"},
+    "cbUrlProtocol": "https",
+    "union": True,
+}
+
+
+def _cache_dir():
+    path = os.environ.get("MIYU_SCRIPT_CACHE_DIR") or os.path.expanduser(
+        "~/.cache/douyin-dl")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def mint_ttwid(force=False):
+    """Fetch (and cache for a day) an anonymous device cookie."""
+    cache = os.path.join(_cache_dir(), "ttwid.json")
+    if not force and os.path.exists(cache):
+        try:
+            blob = json.load(open(cache, encoding="utf-8"))
+            if blob.get("value") and time.time() - blob.get("at", 0) < 86400:
+                return blob["value"]
+        except Exception:
+            pass
+
+    request = urllib.request.Request(
+        _TTWID_API, data=json.dumps(_TTWID_BODY).encode(),
+        headers={"User-Agent": UA, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            for header in response.headers.get_all("Set-Cookie") or []:
+                if header.startswith("ttwid="):
+                    value = header.split(";", 1)[0].split("=", 1)[1]
+                    json.dump({"value": value, "at": time.time()},
+                              open(cache, "w", encoding="utf-8"))
+                    return value
+    except Exception:
+        return None
+    return None
+
+
+def douyin_detail(aweme_id, cookie_header=None):
+    """Return the aweme_detail dict, or (None, reason)."""
+    last = "unknown"
+    # Roughly half of Douyin's edge nodes answer an unsigned request with 403,
+    # the other half answer it just fine, so a handful of retries is the whole
+    # trick.  The cookie is only re-minted as a last resort.
+    for attempt in range(6):
+        cookie = cookie_header or f"ttwid={mint_ttwid(force=attempt == 4)}"
+        query = urllib.parse.urlencode({
+            "aweme_id": aweme_id, "aid": 6383,
+            "channel": "channel_pc_web", "detail_list": 1,
+        })
+        request = urllib.request.Request(
+            f"{_DETAIL_API}?{query}",
+            headers={"User-Agent": UA, "Referer": "https://www.douyin.com/",
+                     "Cookie": cookie})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                blob = json.loads(response.read().decode("utf-8", "replace"))
+        except Exception as exc:
+            last = f"detail api: {exc}"
+            time.sleep(0.8)
+            continue
+        detail = blob.get("aweme_detail")
+        if detail:
+            return detail, None
+        reason = (blob.get("filter_detail") or {}).get("detail_msg")
+        if reason:
+            return None, reason
+        last = "empty response (anti-bot or removed)"
+        time.sleep(0.8)
+    return None, last
+
+
+def _pick_bitrate(detail, quality):
+    rates = [r for r in (detail.get("video", {}).get("bit_rate") or [])
+             if (r.get("play_addr") or {}).get("url_list")]
+    if not rates:
+        return None
+    def short_side(rate):
+        addr = rate["play_addr"]
+        sides = [addr.get("width") or 0, addr.get("height") or 0]
+        return min(s for s in sides if s) if any(sides) else 0
+
+    rates.sort(key=lambda r: (short_side(r), r.get("bit_rate") or 0))
+    if quality == "worst":
+        return rates[0]
+    if quality in ("1080", "720"):
+        # Douyin labels gears by the short side, so a 1080p portrait clip is
+        # 1080x1920 -- compare on the short side or every cap picks the worst.
+        cap = int(quality)
+        under = [r for r in rates if short_side(r) <= cap]
+        return under[-1] if under else rates[0]
+    return rates[-1]
+
+
+def douyin_summary(detail, quality="best"):
+    rate = _pick_bitrate(detail, quality)
+    addr = (rate or {}).get("play_addr") or {}
+    return {
+        "id": detail.get("aweme_id"),
+        "title": (detail.get("desc") or "").strip()[:200],
+        "uploader": (detail.get("author") or {}).get("nickname"),
+        "duration": round((detail.get("duration") or 0) / 1000) or None,
+        "width": addr.get("width"),
+        "height": addr.get("height"),
+        "filesize": addr.get("data_size"),
+        "webpage_url": f"https://www.douyin.com/video/{detail.get('aweme_id')}",
+        "ext": "mp4",
+        "_urls": addr.get("url_list") or [],
+    }
+
+
+_UNSAFE = re.compile(r'[\\/:*?"<>|\n\r\t]+')
+
+
+def douyin_fetch(summary, out_dir):
+    """Stream the watermark-free file to disk."""
+    os.makedirs(out_dir, exist_ok=True)
+    name = _UNSAFE.sub("_", f"{summary['uploader'] or 'douyin'}-"
+                            f"{summary['title'] or summary['id']}")[:80]
+    target = os.path.join(out_dir, f"{name}-{summary['id']}.mp4")
+    last = "no playable url"
+    for url in summary["_urls"]:
+        request = urllib.request.Request(url, headers={
+            "User-Agent": UA, "Referer": "https://www.douyin.com/"})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response, \
+                    open(target, "wb") as handle:
+                shutil.copyfileobj(response, handle, 1 << 20)
+            if os.path.getsize(target) > 10240:
+                return target, None
+            last = "server returned a truncated file"
+        except Exception as exc:
+            last = str(exc)[:160]
+    return None, last
+
+
+# --------------------------------------------------------------------------
+# photo posts (Douyin 图文 / TikTok photo mode)
+# --------------------------------------------------------------------------
+
+_IMAGE_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+              "image/heic": "heic"}
+
+
+def douyin_gallery(detail):
+    aweme_id = detail.get("aweme_id")
+    images = [img.get("url_list") or [] for img in detail.get("images") or []]
+    return {
+        "id": aweme_id,
+        "title": (detail.get("desc") or "").strip()[:200],
+        "uploader": (detail.get("author") or {}).get("nickname"),
+        "count": len(images),
+        "webpage_url": f"https://www.douyin.com/note/{aweme_id}",
+        "_images": [urls for urls in images if urls],
+    }
+
+
+def tiktok_gallery(item):
+    author = item.get("author") or {}
+    images = [(img.get("imageURL") or {}).get("urlList") or []
+              for img in (item.get("imagePost") or {}).get("images") or []]
+    return {
+        "id": item.get("id"),
+        "title": (item.get("desc") or "").strip()[:200],
+        "uploader": author.get("uniqueId") or author.get("nickname"),
+        "count": len(images),
+        "webpage_url": (f"https://www.tiktok.com/@{author.get('uniqueId')}"
+                        f"/photo/{item.get('id')}"),
+        "_images": [urls for urls in images if urls],
+    }
+
+
+def gallery_fetch(summary, out_dir, referer):
+    """Save every image of a photo post as 01.jpg, 02.jpg, ... in one folder."""
+    name = _UNSAFE.sub("_", f"{summary['uploader'] or 'photo'}-"
+                            f"{summary['title'] or summary['id']}")[:80]
+    folder = os.path.join(out_dir, f"{name}-{summary['id']}")
+    os.makedirs(folder, exist_ok=True)
+    saved, failed = [], []
+    for index, urls in enumerate(summary["_images"], 1):
+        last = "no url"
+        for url in urls:
+            request = urllib.request.Request(url, headers={
+                "User-Agent": UA, "Referer": referer})
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    kind = response.headers.get_content_type()
+                    data = response.read()
+            except Exception as exc:
+                last = str(exc)[:160]
+                continue
+            if not kind.startswith("image/") or len(data) < 1024:
+                last = f"unexpected response ({kind}, {len(data)}B)"
+                continue
+            ext = _IMAGE_EXT.get(kind, kind.split("/", 1)[1])
+            target = os.path.join(folder, f"{index:02d}.{ext}")
+            with open(target, "wb") as handle:
+                handle.write(data)
+            saved.append(target)
+            break
+        else:
+            failed.append(f"#{index}: {last}")
+    return folder, saved, failed
+
+
+# --------------------------------------------------------------------------
+# layer 3b -- hand off to yt-dlp (TikTok, and Douyin as a fallback)
+# --------------------------------------------------------------------------
+
+_QUALITY = {
+    "best": "bv*+ba/b",
+    "1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
+    "720": "bv*[height<=720]+ba/b[height<=720]/b",
+    "worst": "wv*+wa/w",
+}
+
+
+def ytdlp_path():
+    return shutil.which("yt-dlp")
+
+
+def run_ytdlp(argv, timeout=280, cwd=None):
+    binary = ytdlp_path()
+    if not binary:
+        fail("yt-dlp not found on PATH",
+             "Install it: sudo pacman -S yt-dlp")
+    try:
+        return subprocess.run([binary, *argv], capture_output=True,
+                              text=True, timeout=timeout, cwd=cwd)
+    except subprocess.TimeoutExpired:
+        fail("yt-dlp timed out", "Retry, or check the network / proxy")
+
+
+def _common_flags(cookies):
+    flags = ["--no-warnings", "--no-playlist", "--user-agent", UA]
+    if cookies:
+        flags += ["--cookies", cookies]
+    return flags
+
+
+def probe(url, cookies=None):
+    """Return yt-dlp's metadata dict, or (None, stderr)."""
+    result = run_ytdlp([*_common_flags(cookies), "-J", url])
+    if result.returncode != 0 or not result.stdout.strip():
+        return None, (result.stderr or "").strip()
+    try:
+        return json.loads(result.stdout), None
+    except json.JSONDecodeError:
+        return None, "yt-dlp returned malformed JSON"
+
+
+_REHYDRATION = re.compile(
+    r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', re.S)
+
+
+def tiktok_item(url, cookies=None):
+    """Return the post's itemStruct from the TikTok web page, or (None, reason).
+
+    yt-dlp already clears TikTok's WAF challenge page but throws the photo-mode
+    images away, so let it fetch the page, dump it with --write-pages, and read
+    the embedded rehydration JSON ourselves.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result = run_ytdlp([*_common_flags(cookies), "--simulate",
+                            "--write-pages", url], cwd=tmp)
+        for name in sorted(os.listdir(tmp)):
+            if not name.endswith(".dump"):
+                continue
+            with open(os.path.join(tmp, name), encoding="utf-8",
+                      errors="replace") as handle:
+                match = _REHYDRATION.search(handle.read())
+            if not match:
+                continue
+            try:
+                scope = json.loads(match.group(1))["__DEFAULT_SCOPE__"]
+            except (ValueError, KeyError):
+                continue
+            item = ((scope.get("webapp.video-detail") or {})
+                    .get("itemInfo", {}).get("itemStruct"))
+            if item:
+                return item, None
+    return None, (result.stderr or "").strip() or "no post data in the page"
+
+
+def download(url, out_dir, quality, cookies=None):
+    os.makedirs(out_dir, exist_ok=True)
+    template = os.path.join(out_dir, "%(uploader,creator|douyin)s-%(id)s.%(ext)s")
+    argv = [
+        *_common_flags(cookies),
+        "-f", _QUALITY.get(quality, _QUALITY["best"]),
+        "-o", template,
+        "--no-mtime",
+        "--print", "after_move:filepath",
+        url,
+    ]
+    result = run_ytdlp(argv)
+    if result.returncode != 0:
+        return None, (result.stderr or "").strip()
+    paths = [line for line in result.stdout.splitlines() if line.strip()]
+    return (paths[-1] if paths else None), None
+
+
+# --------------------------------------------------------------------------
+# rendering
+# --------------------------------------------------------------------------
+
+
+def human_size(num):
+    if not num:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB"):
+        if num < 1024:
+            return f"{num:.1f}{unit}" if unit != "B" else f"{int(num)}B"
+        num /= 1024
+    return f"{num:.1f}TB"
+
+
+def summarize(info):
+    return {
+        "id": info.get("id"),
+        "title": (info.get("title") or "").strip()[:200],
+        "uploader": info.get("uploader") or info.get("creator"),
+        "duration": info.get("duration"),
+        "width": info.get("width"),
+        "height": info.get("height"),
+        "filesize": info.get("filesize") or info.get("filesize_approx"),
+        "webpage_url": info.get("webpage_url"),
+        "ext": info.get("ext"),
+    }
+
+
+def report(path, summary, platform, fmt):
+    size = os.path.getsize(path) if os.path.exists(path) else 0
+    if fmt == "json":
+        print(json.dumps({"ok": True, "path": path, "size": size,
+                          "platform": platform, **summary},
+                         ensure_ascii=False, indent=2))
+    else:
+        print(f"下载完成\n\n- 文件: {path}\n- 大小: {human_size(size)}\n"
+              f"- 标题: {summary['title']}\n- 作者: {summary['uploader'] or '?'}")
+
+
+def run_gallery(summary, platform, action, out_dir, fmt):
+    if action == "info":
+        meta = {k: v for k, v in summary.items() if k != "_images"}
+        if fmt == "json":
+            print(json.dumps({"ok": True, "platform": platform, "type": "photo",
+                              **meta}, ensure_ascii=False, indent=2))
+        else:
+            print(f"**{meta['title'] or '(untitled)'}**\n\n"
+                  f"- 平台: {platform}\n- 类型: 图文\n"
+                  f"- 作者: {meta['uploader'] or '?'}\n"
+                  f"- 图片: {meta['count']} 张\n- 链接: {meta['webpage_url']}")
+        return
+
+    referer = ("https://www.douyin.com/" if platform == "douyin"
+               else "https://www.tiktok.com/")
+    folder, saved, failed = gallery_fetch(summary, out_dir, referer)
+    if not saved:
+        fail(f"download failed: {'; '.join(failed) or 'no images in the post'}",
+             "The image links may have expired; retry with a fresh share link")
+    size = sum(os.path.getsize(path) for path in saved)
+    meta = {k: v for k, v in summary.items() if k != "_images"}
+    if fmt == "json":
+        print(json.dumps({"ok": True, "path": folder, "files": saved,
+                          "size": size, "failed": failed, "platform": platform,
+                          "type": "photo", **meta},
+                         ensure_ascii=False, indent=2))
+    else:
+        lines = [f"下载完成\n\n- 目录: {folder}",
+                 f"- 图片: {len(saved)}/{meta['count']} 张",
+                 f"- 大小: {human_size(size)}",
+                 f"- 标题: {meta['title']}",
+                 f"- 作者: {meta['uploader'] or '?'}"]
+        lines += [f"- 失败: {item}" for item in failed]
+        print("\n".join(lines))
+
+
+def render_info(meta, canonical, platform, fmt):
+    if fmt == "json":
+        return json.dumps({"ok": True, "platform": platform,
+                           "url": canonical, **meta}, ensure_ascii=False,
+                          indent=2)
+    lines = [
+        f"**{meta['title'] or '(untitled)'}**",
+        "",
+        f"- 平台: {platform}",
+        f"- 作者: {meta['uploader'] or '?'}",
+        f"- 时长: {meta['duration'] or '?'}s",
+        f"- 分辨率: {meta['width'] or '?'}x{meta['height'] or '?'}",
+        f"- 大小: {human_size(meta['filesize'])}",
+        f"- 链接: {canonical}",
+    ]
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# doctor
+# --------------------------------------------------------------------------
+
+
+def doctor(fmt):
+    checks = []
+
+    binary = ytdlp_path()
+    if binary:
+        version = run_ytdlp(["--version"], timeout=30).stdout.strip()
+        checks.append(("yt-dlp", "ok", f"{binary} ({version})"))
+    else:
+        checks.append(("yt-dlp", "fail", "not on PATH -- pacman -S yt-dlp"))
+
+    if binary:
+        listing = run_ytdlp(["--list-extractors"], timeout=60).stdout
+        for name in ("Douyin", "TikTok"):
+            state = "ok" if re.search(rf"^{name}$", listing, re.M) else "fail"
+            checks.append((f"extractor:{name}", state,
+                           "present" if state == "ok" else "missing"))
+
+    ffmpeg = shutil.which("ffmpeg")
+    checks.append(("ffmpeg", "ok" if ffmpeg else "warn",
+                   ffmpeg or "missing -- separate audio/video cannot be muxed"))
+
+    # Cheap egress probe; Douyin geo-blocks some regions.
+    try:
+        request = urllib.request.Request("https://www.douyin.com/",
+                                         headers={"User-Agent": UA})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            checks.append(("douyin reachable", "ok", f"HTTP {response.status}"))
+    except Exception as exc:
+        checks.append(("douyin reachable", "warn", str(exc)[:120]))
+
+    ttwid = mint_ttwid()
+    checks.append(("douyin device cookie", "ok" if ttwid else "fail",
+                   f"ttwid {ttwid[:16]}..." if ttwid else "could not mint one"))
+
+    # Self-test the cleaning layer without touching the network.
+    sample = ("7.88 复制打开抖音，看看【某人的作品】锟斤拷 "
+              "https://v.douyin.com/iRNBho6G/ 这是后面紧贴的中文")
+    got = extract_url(sample)
+    ok = got.rstrip("/") == "https://v.douyin.com/iRNBho6G"
+    checks.append(("url cleaning", "ok" if ok else "fail", got))
+
+    worst = "fail" if any(s == "fail" for _, s, _ in checks) else "ok"
+    if fmt == "json":
+        return json.dumps(
+            {"ok": worst == "ok",
+             "checks": [{"name": n, "status": s, "detail": d}
+                        for n, s, d in checks]},
+            ensure_ascii=False, indent=2), worst
+    icon = {"ok": "+", "warn": "!", "fail": "x"}
+    body = "\n".join(f"[{icon[s]}] {n}: {d}" for n, s, d in checks)
+    return body, worst
+
+
+# --------------------------------------------------------------------------
+
+
+def main():
+    raw = os.environ.get("MIYU_ARGS_JSON") or sys.stdin.read() or "{}"
+    try:
+        args = json.loads(raw)
+    except json.JSONDecodeError:
+        fail("arguments must be a JSON object")
+
+    action = args.get("action") or "info"
+    fmt = args.get("format") or "md"
+
+    if action == "doctor":
+        body, worst = doctor(fmt)
+        print(body)
+        sys.exit(0 if worst != "fail" else 1)
+
+    if not args.get("url"):
+        fail("url is required", "Paste the share text or the link")
+
+    cookies = args.get("cookies")
+    if cookies and not os.path.exists(cookies):
+        fail(f"cookies file not found: {cookies}")
+
+    cleaned = extract_url(args["url"])
+    if not re.match(r"^https?://", cleaned):
+        fail("no URL found in the input",
+             "Make sure the share text still contains the link")
+
+    canonical, platform, aweme_id = canonicalize(cleaned)
+    if platform == "other":
+        fail(f"unsupported site: {canonical}",
+             "This tool only handles Douyin and TikTok")
+
+    quality = args.get("quality") or "best"
+    out_dir = os.path.expanduser(args.get("out_dir") or "~/Downloads/douyin")
+
+    # Douyin: talk to the web API ourselves.  yt-dlp's extractor omits the web
+    # client id and therefore always trips the anti-bot wall.
+    if platform == "douyin" and aweme_id:
+        detail, error = douyin_detail(aweme_id)
+        if detail and detail.get("images"):
+            run_gallery(douyin_gallery(detail), platform, action, out_dir, fmt)
+            return
+        if detail:
+            summary = douyin_summary(detail, quality)
+            urls = summary.pop("_urls")
+            if action == "info":
+                print(render_info(summary, canonical, platform, fmt))
+                return
+            summary["_urls"] = urls
+            path, error = douyin_fetch(summary, out_dir)
+            summary.pop("_urls", None)
+            if path:
+                report(path, summary, platform, fmt)
+                return
+        if action == "info" or not detail:
+            fail(f"parse failed: {error or 'unknown'}",
+                 "The video may be private or removed; otherwise retry, the "
+                 "device cookie refreshes itself")
+        fail(f"download failed: {error or 'unknown'}",
+             "Check disk space and network, then retry")
+
+    meta, error = probe(canonical, cookies)
+    if meta is None:
+        lowered = (error or "").lower()
+        hint = "Try again with a fresh share link"
+        if "ip address is blocked" in lowered:
+            hint = ("TikTok blocks this egress IP. Route the request through a "
+                    "residential proxy or VPN and retry")
+        elif "login" in lowered or "cookie" in lowered:
+            hint = "Export cookies.txt from a logged-in browser and pass cookies="
+        fail(f"parse failed: {error or 'unknown'}", hint)
+
+    # A TikTok photo post comes back from yt-dlp as a lone audio track.
+    formats = meta.get("formats") or []
+    if platform == "tiktok" and formats and all(
+            f.get("vcodec") == "none" for f in formats):
+        item, error = tiktok_item(canonical, cookies)
+        if item and (item.get("imagePost") or {}).get("images"):
+            run_gallery(tiktok_gallery(item), platform, action, out_dir, fmt)
+            return
+
+    summary = summarize(meta)
+
+    if action == "info":
+        print(render_info(summary, canonical, platform, fmt))
+        return
+
+    path, error = download(canonical, out_dir, quality, cookies)
+    if not path:
+        fail(f"download failed: {error or 'unknown'}",
+             "Check disk space and network, then retry")
+    report(path, summary, platform, fmt)
+
+
+if __name__ == "__main__":
+    main()
